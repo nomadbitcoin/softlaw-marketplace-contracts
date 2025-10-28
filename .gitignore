@@ -1,0 +1,71 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Foundry
+cache/
+out/
+artifacts/
+broadcast/
+*.gas-snapshot
+
+# Hardhat
+typechain-types/
+coverage/
+coverage.json
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+lcov.info
+*.lcov
+
+# Deployment
+deployments/
+.openzeppelin/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Build artifacts
+build/
+dist/
+
+# Documentation
+docs/.build/
+docs/_build/
+
+# Local development
+.cache/
+.history/
+
+# Forge
+lib/
+!lib/forge-std/
+
+# Solidity
+*.abi
+*.bin
+
+# Misc
+TODO
+.~*

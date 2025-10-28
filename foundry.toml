@@ -1,0 +1,66 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+cache_path = "cache"
+solc = "0.8.28"
+
+# Gas reporting
+gas_reports = ["*"]
+gas_reports_ignore = []
+
+# Size reporting (CRITICAL: All contracts must be < 100KB)
+sizes = true
+
+# Resolc configuration for PolkaVM compilation
+# REQUIRED: All production contracts MUST compile with resolc
+[profile.default.resolc]
+resolc_compile = true
+resolc_version = "0.3.0"
+resolc_optimizer_mode = "3"
+
+# Network RPC endpoints
+[rpc_endpoints]
+paseo = "https://testnet-passet-hub-eth-rpc.polkadot.io"
+passetHub = "${paseo}"
+localNode = "http://127.0.0.1:8545"
+
+# Network configurations
+# Note: polkavm = true is required for PolkaVM deployment
+[profile.networks]
+paseo = { chain_id = 420420422, polkavm = true }
+
+# Test configuration (tests use standard EVM, not PolkaVM)
+[profile.test]
+src = "src"
+test = "test"
+solc = "0.8.28"
+# Tests can use standard OpenZeppelin (size limits don't apply)
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+]
+
+# Formatter
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = true
+number_underscore = "thousands"
+
+# Fuzz testing
+[fuzz]
+runs = 256
+max_test_rejects = 65536
+seed = '0x1'
+
+# Invariant testing
+[invariant]
+runs = 256
+depth = 15
+fail_on_revert = false
+
+# Documentation
+[doc]
+out = "docs/contracts"
+title = "Softlaw Marketplace Contracts"
