@@ -1,0 +1,41 @@
+{
+  "name": "Polkadot Smart Contract Development",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/project,type=bind",
+  "workspaceFolder": "/project",
+  "mounts": [
+    "source=softlaw-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
+    "source=softlaw-claude-config-${devcontainerId},target=/home/vscode/.claude,type=volume",
+    "source=${localWorkspaceFolder}/.devcontainer/.aliases,target=/home/vscode/.bash_aliases,type=bind,readonly"
+  ],
+  "containerEnv": {
+    "PROJECT_DIR": "/project",
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    "HISTFILE": "/commandhistory/.bash_history"
+  },
+  "postAttachCommand": "cd /project && bash -c 'devtools setup-devcontainer && devtools setup-keypair'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "esbenp.prettier-vscode",
+        "NomicFoundation.hardhat-solidity",
+        "dbaeumer.vscode-eslint",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "solidity.formatter": "prettier",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        }
+      }
+    }
+  }
+}

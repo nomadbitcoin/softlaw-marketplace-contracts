@@ -1,14 +1,10 @@
 # Softlaw Marketplace Contracts
 
-Smart contracts for the Softlaw marketplace, built with Foundry and designed for deployment on Polkadot's Asset Hub (PolkaVM).
-
-## Overview
-
-This project uses Foundry with Resolc compiler support for PolkaVM-compatible smart contract development. It supports both standard EVM testing and PolkaVM deployment.
+Smart contracts for the Softlaw marketplace, built with Foundry for deployment on Polkadot's Asset Hub (PolkaVM).
 
 ## Prerequisites
 
-### Install Foundry (both versions required)
+### Install Foundry
 
 **Standard Foundry** (for testing):
 ```bash
@@ -22,7 +18,7 @@ curl -L https://raw.githubusercontent.com/paritytech/foundry-polkadot/refs/heads
 foundryup-polkadot
 ```
 
-### Setup Environment
+### Environment Setup
 
 ```bash
 cp .env.example .env
@@ -31,24 +27,56 @@ cp .env.example .env
 
 Get testnet tokens from [Polkadot Faucet](https://faucet.polkadot.io/)
 
-## Development
+## Testing
 
-### Testing
-
-Use standard Foundry for testing:
-
+Run tests (default profile uses Solc for EVM):
 ```bash
-foundryup
-forge test
+forge test                                    # All tests
+forge test --match-path "test/base/*.t.sol"  # Base contracts only
+forge test --match-contract IPAssetTest       # Specific contract
 ```
 
-### Building
-
-For PolkaVM deployment, use foundry-polkadot:
+### Gas Reports
 
 ```bash
-foundryup-polkadot
-forge build
+forge test --gas-report                                   # All contracts
+forge test --match-path "test/base/*.t.sol" --gas-report # Base contracts only
+```
+
+### Coverage
+
+```bash
+forge coverage                          # Terminal output
+forge coverage --report lcov            # LCOV format
+forge coverage --report html            # HTML report
+open coverage/index.html                # View in browser
+```
+
+## Building
+
+### PolkaVM Build
+
+```bash
+FOUNDRY_PROFILE=polkavm forge build
+```
+
+### Check Bytecode Size
+
+```bash
+# Check bytecode size (must be < 100KB)
+FOUNDRY_PROFILE=polkavm forge inspect IPAsset bytecode | wc -c
+
+# Verify PolkaVM prefix (should be 0x5056)
+FOUNDRY_PROFILE=polkavm forge inspect IPAsset bytecode | head -c 6
+```
+
+### Size Calculation
+
+```bash
+bytecode=$(FOUNDRY_PROFILE=polkavm forge inspect IPAsset bytecode)
+size=$(((${#bytecode} - 2) / 2))
+kb=$(echo "scale=2; $size / 1024" | bc)
+echo "IPAsset: $kb KB (limit: 100 KB)"
 ```
 
 ## Deployment
@@ -57,7 +85,7 @@ forge build
 
 ```bash
 foundryup-polkadot
-forge build
+FOUNDRY_PROFILE=polkavm forge build
 ./deploy.sh
 ```
 
@@ -80,7 +108,7 @@ forge script script/Counter.s.sol:CounterScript \
   --broadcast
 ```
 
-## Network Configuration
+## Networks
 
 ### Passet Hub (Testnet)
 
@@ -95,13 +123,7 @@ Check [Polkadot docs](https://docs.polkadot.com/polkadot-protocol/smart-contract
 
 ## Verification
 
-After deployment, update `CONTRACT_ADDRESS` in `verify-deployment.sh` and run:
-
-```bash
-./verify-deployment.sh
-```
-
-Or verify manually:
+After deployment:
 
 ```bash
 # Check contract exists
@@ -122,38 +144,15 @@ cast send <CONTRACT_ADDRESS> "increment()" \
 ```
 .
 ├── src/              # Smart contracts
+│   └── base/         # Minimal base contracts for PolkaVM
 ├── script/           # Deployment scripts
 ├── test/             # Test files
+│   └── base/         # Base contract tests
 ├── lib/              # Dependencies (forge-std)
 ├── foundry.toml      # Foundry configuration
 ├── .env              # Environment variables (not committed)
-├── deploy.sh         # Deployment automation
-└── verify-deployment.sh  # Contract verification
+└── docs/             # Documentation and stories
 ```
-
-## Compiler Versions
-
-- **Standard Foundry**: v1.4.3-stable (testing)
-- **Foundry-Polkadot**: v1.1.0-stable with Resolc v0.4.1 (deployment)
-
-Switch between versions:
-```bash
-foundryup          # Standard Foundry
-foundryup-polkadot # Foundry-Polkadot
-```
-
-## Troubleshooting
-
-**"No contract bytecode"**:
-- Ensure you're in the project root
-- Run `forge build` first
-- Verify foundry-polkadot is active: `forge --version`
-
-**"--resolc-compile not recognized"**:
-- Switch to foundry-polkadot: `foundryup-polkadot`
-
-**"Compilation skipped"**:
-- Force rebuild: `forge clean && forge build --force`
 
 ## Security
 
@@ -171,7 +170,8 @@ foundryup-polkadot # Foundry-Polkadot
 - [Polkadot Developer Docs](https://docs.polkadot.com/)
 - [Foundry-Polkadot](https://github.com/paritytech/foundry-polkadot)
 - [Foundry Book](https://book.getfoundry.sh/)
+- [Base Contracts Documentation](src/base/README.md)
 
 ## License
 
-[Add your license here]
+MIT
