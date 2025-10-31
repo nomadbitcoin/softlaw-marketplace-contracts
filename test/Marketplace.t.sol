@@ -7,7 +7,7 @@ import "../src/IPAsset.sol";
 import "../src/LicenseToken.sol";
 import "../src/RevenueDistributor.sol";
 import "../src/GovernanceArbitrator.sol";
-import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "../src/base/ERC1967Proxy.sol";
 
 contract MarketplaceTest is Test {
     Marketplace public marketplace;
