@@ -101,11 +101,7 @@ forge create src/Counter.sol:Counter \
 ### Deploy with Script
 
 ```bash
-source .env
-forge script script/Counter.s.sol:CounterScript \
-  --rpc-url https://testnet-passet-hub-eth-rpc.polkadot.io \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+forge script script/DeployIPAsset.s.sol:DeployIPAsset --rpc-url https://testnet-passet-hub-eth-rpc.polkadot.io --broadcast --legacy --slow -vv --skip-simulation
 ```
 
 ## Networks
