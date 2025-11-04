@@ -6,16 +6,9 @@ Smart contracts for the Softlaw marketplace, built with Foundry for deployment o
 
 ### Install Foundry
 
-**Standard Foundry** (for testing):
 ```bash
 curl -L https://foundry.paradigm.xyz | bash
 foundryup
-```
-
-**Foundry-Polkadot** (for PolkaVM deployment):
-```bash
-curl -L https://raw.githubusercontent.com/paritytech/foundry-polkadot/refs/heads/master/foundryup/install | bash
-foundryup-polkadot
 ```
 
 ### Environment Setup
@@ -25,11 +18,11 @@ cp .env.example .env
 # Add your PRIVATE_KEY to .env
 ```
 
-Get testnet tokens from [Polkadot Faucet](https://faucet.polkadot.io/)
+Get testnet tokens from [Polkadot Faucet](https://faucet.polkadot.io/?parachain=1111)
 
 ## Testing
 
-Run tests (default profile uses Solc for EVM):
+Run tests:
 ```bash
 forge test                                    # All tests
 forge test --match-path "test/base/*.t.sol"  # Base contracts only
@@ -54,64 +47,42 @@ open coverage/index.html                # View in browser
 
 ## Building
 
-### PolkaVM Build
+### Build Contracts
 
 ```bash
-FOUNDRY_PROFILE=polkavm forge build
-```
-
-### Check Bytecode Size
-
-```bash
-# Check bytecode size (must be < 100KB)
-FOUNDRY_PROFILE=polkavm forge inspect IPAsset bytecode | wc -c
-
-# Verify PolkaVM prefix (should be 0x5056)
-FOUNDRY_PROFILE=polkavm forge inspect IPAsset bytecode | head -c 6
-```
-
-### Size Calculation
-
-```bash
-bytecode=$(FOUNDRY_PROFILE=polkavm forge inspect IPAsset bytecode)
-size=$(((${#bytecode} - 2) / 2))
-kb=$(echo "scale=2; $size / 1024" | bc)
-echo "IPAsset: $kb KB (limit: 100 KB)"
+forge build
 ```
 
 ## Deployment
 
-### Quick Deploy (Testnet)
-
-```bash
-foundryup-polkadot
-FOUNDRY_PROFILE=polkavm forge build
-./deploy.sh
-```
-
-### Manual Deploy
+### Deploy to Passet Hub Testnet
 
 ```bash
 source .env
-forge create src/Counter.sol:Counter \
-  --rpc-url https://testnet-passet-hub-eth-rpc.polkadot.io \
+forge script script/DeployIPAsset.s.sol:DeployIPAsset \
+  --rpc-url paseo \
+  --broadcast \
   --private-key $PRIVATE_KEY
+  --legacy
+  --skip-simulation
 ```
 
-### Deploy with Script
+### Quick Deploy Script
 
 ```bash
-forge script script/DeployIPAsset.s.sol:DeployIPAsset --rpc-url https://testnet-passet-hub-eth-rpc.polkadot.io --broadcast --legacy --slow -vv --skip-simulation
+./deploy.sh
 ```
 
 ## Networks
 
 ### Passet Hub (Testnet)
 
-- **RPC**: `https://testnet-passet-hub-eth-rpc.polkadot.io`
+- **Network**: Passet Hub (Polkadot Asset Hub TestNet)
+- **Type**: EVM-compatible
 - **Chain ID**: `420420422`
-- **Explorer**: https://polkadot-hub-testnet.blockscout.com/
-- **Faucet**: https://faucet.polkadot.io/
+- **RPC**: `https://testnet-passet-hub-eth-rpc.polkadot.io`
+- **Explorer**: https://blockscout-passet-hub.parity-testnet.parity.io
+- **Faucet**: https://faucet.polkadot.io/?parachain=1111
 
 ### Polkadot Hub (Mainnet)
 
@@ -123,15 +94,15 @@ After deployment:
 
 ```bash
 # Check contract exists
-cast code <CONTRACT_ADDRESS> --rpc-url https://testnet-passet-hub-eth-rpc.polkadot.io
+cast code <CONTRACT_ADDRESS> --rpc-url paseo
 
-# Read state
-cast call <CONTRACT_ADDRESS> "number()" --rpc-url https://testnet-passet-hub-eth-rpc.polkadot.io
+# Verify initialization
+cast call <CONTRACT_ADDRESS> "name()(string)" --rpc-url paseo
 
 # Send transaction
 source .env
-cast send <CONTRACT_ADDRESS> "increment()" \
-  --rpc-url https://testnet-passet-hub-eth-rpc.polkadot.io \
+cast send <CONTRACT_ADDRESS> "mintIP(address,string)" $YOUR_ADDRESS "ipfs://metadata" \
+  --rpc-url paseo \
   --private-key $PRIVATE_KEY
 ```
 
@@ -140,14 +111,17 @@ cast send <CONTRACT_ADDRESS> "increment()" \
 ```
 .
 ├── src/              # Smart contracts
-│   └── base/         # Minimal base contracts for PolkaVM
+│   ├── interfaces/   # Contract interfaces
+│   └── base/         # Base contract implementations
 ├── script/           # Deployment scripts
 ├── test/             # Test files
 │   └── base/         # Base contract tests
-├── lib/              # Dependencies (forge-std)
+├── lib/              # Dependencies (forge-std, OpenZeppelin)
 ├── foundry.toml      # Foundry configuration
 ├── .env              # Environment variables (not committed)
-└── docs/             # Documentation and stories
+└── docs/             # Documentation and architecture
+    ├── architecture/ # Technical specifications
+    └── stories/      # User stories and epics
 ```
 
 ## Security
@@ -164,9 +138,8 @@ cast send <CONTRACT_ADDRESS> "increment()" \
 ## Resources
 
 - [Polkadot Developer Docs](https://docs.polkadot.com/)
-- [Foundry-Polkadot](https://github.com/paritytech/foundry-polkadot)
 - [Foundry Book](https://book.getfoundry.sh/)
-- [Base Contracts Documentation](src/base/README.md)
+- [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts)
 
 ## License
 
