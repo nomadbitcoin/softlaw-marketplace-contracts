@@ -25,8 +25,7 @@ contract IPAsset is
     address public arbitratorContract;
 
     uint256 private _tokenIdCounter;
-    mapping(uint256 => uint256) public metadataVersion;
-    mapping(uint256 => mapping(uint256 => string)) public metadataHistory;
+    mapping(uint256 => string) private _metadataURIs;
     mapping(uint256 => uint256) public activeLicenseCount;
     mapping(uint256 => bool) private _hasActiveDispute;
 
@@ -52,12 +51,16 @@ contract IPAsset is
 
         licenseTokenContract = licenseToken;
         arbitratorContract = arbitrator;
+        _tokenIdCounter = 1;
     }
 
     function mintIP(address to, string memory metadataURI) external whenNotPaused returns (uint256) {
+        if (to == address(0)) revert InvalidAddress();
+        if (bytes(metadataURI).length == 0) revert EmptyMetadata();
+
         uint256 tokenId = _tokenIdCounter++;
         _mint(to, tokenId);
-        metadataHistory[tokenId][0] = metadataURI;
+        _metadataURIs[tokenId] = metadataURI;
         emit IPMinted(tokenId, to, metadataURI);
         return tokenId;
     }
@@ -78,10 +81,17 @@ contract IPAsset is
     }
 
     function updateMetadata(uint256 tokenId, string memory newURI) external whenNotPaused {
-        require(ownerOf(tokenId) == msg.sender, "Not token owner");
-        uint256 newVersion = ++metadataVersion[tokenId];
-        metadataHistory[tokenId][newVersion] = newURI;
-        emit MetadataUpdated(tokenId, newVersion, newURI);
+        if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+        if (bytes(newURI).length == 0) revert EmptyMetadata();
+
+        string memory oldURI = _metadataURIs[tokenId];
+        _metadataURIs[tokenId] = newURI;
+        emit MetadataUpdated(tokenId, oldURI, newURI, block.timestamp);
+    }
+
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        _requireOwned(tokenId);
+        return _metadataURIs[tokenId];
     }
 
     function configureRevenueSplit(

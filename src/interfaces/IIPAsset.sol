@@ -20,10 +20,12 @@ interface IIPAsset {
     /**
      * @notice Emitted when IP metadata is updated
      * @param tokenId The ID of the token being updated
-     * @param version The new version number
+     * @param oldURI The previous metadata URI
      * @param newURI The new metadata URI
+     * @param timestamp The block timestamp when update occurred
+     * @dev Includes old and new URIs for complete off-chain indexing without state tracking
      */
-    event MetadataUpdated(uint256 indexed tokenId, uint256 version, string newURI);
+    event MetadataUpdated(uint256 indexed tokenId, string oldURI, string newURI, uint256 timestamp);
 
     /**
      * @notice Emitted when a license is minted for an IP asset
@@ -46,6 +48,17 @@ interface IIPAsset {
      * @param hasDispute Whether the asset now has an active dispute
      */
     event DisputeStatusChanged(uint256 indexed tokenId, bool hasDispute);
+
+    // ==================== ERRORS ====================
+
+    /// @notice Thrown when attempting to mint to zero address
+    error InvalidAddress();
+
+    /// @notice Thrown when metadata URI is empty
+    error EmptyMetadata();
+
+    /// @notice Thrown when caller is not the token owner
+    error NotTokenOwner();
 
     // ==================== FUNCTIONS ====================
 

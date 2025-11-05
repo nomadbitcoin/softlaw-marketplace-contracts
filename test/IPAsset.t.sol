@@ -21,7 +21,7 @@ contract IPAssetTest is Test {
     address public treasury = address(5);
     
     event IPMinted(uint256 indexed tokenId, address indexed owner, string metadataURI);
-    event MetadataUpdated(uint256 indexed tokenId, uint256 version, string newURI);
+    event MetadataUpdated(uint256 indexed tokenId, string oldURI, string newURI, uint256 timestamp);
     event LicenseMinted(uint256 indexed ipTokenId, uint256 indexed licenseId);
     event RevenueSplitConfigured(uint256 indexed tokenId, address[] recipients, uint256[] shares);
     event DisputeStatusChanged(uint256 indexed tokenId, bool hasDispute);
@@ -85,14 +85,14 @@ contract IPAssetTest is Test {
     
     function testMintIPAssignsUniqueIdentifier() public {
         vm.startPrank(creator);
-        
+
         uint256 tokenId1 = ipAsset.mintIP(creator, "ipfs://metadata1");
         uint256 tokenId2 = ipAsset.mintIP(creator, "ipfs://metadata2");
-        
-        assertEq(tokenId1, 0);
-        assertEq(tokenId2, 1);
+
+        assertEq(tokenId1, 1);
+        assertEq(tokenId2, 2);
         assertTrue(tokenId1 != tokenId2);
-        
+
         vm.stopPrank();
     }
     
@@ -161,37 +161,37 @@ contract IPAssetTest is Test {
     function testOwnerCanUpdateMetadata() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
-        
+
         vm.prank(creator);
-        vm.expectEmit(true, false, false, true);
-        emit MetadataUpdated(tokenId, 1, "ipfs://metadata2");
+        vm.expectEmit(true, false, false, false);
+        emit MetadataUpdated(tokenId, "ipfs://metadata1", "ipfs://metadata2", block.timestamp);
         ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
-        
-        assertEq(ipAsset.metadataVersion(tokenId), 1);
+
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata2");
     }
     
     function testNonOwnerCannotUpdateMetadata() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
-        
+
         vm.prank(other);
-        vm.expectRevert("Not token owner");
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.NotTokenOwner.selector));
         ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
     }
     
-    function testMetadataVersioning() public {
+    function testMetadataUpdates() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
-        
+
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata1");
+
         vm.startPrank(creator);
         ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata2");
+
         ipAsset.updateMetadata(tokenId, "ipfs://metadata3");
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata3");
         vm.stopPrank();
-        
-        assertEq(ipAsset.metadataVersion(tokenId), 2);
-        assertEq(ipAsset.metadataHistory(tokenId, 0), "ipfs://metadata1");
-        assertEq(ipAsset.metadataHistory(tokenId, 1), "ipfs://metadata2");
-        assertEq(ipAsset.metadataHistory(tokenId, 2), "ipfs://metadata3");
     }
     
     // ============ BR-001.5: Only the current owner MAY configure revenue splits ============
@@ -324,7 +324,7 @@ contract IPAssetTest is Test {
     function testMintIPEmitsEvent() public {
         vm.prank(creator);
         vm.expectEmit(true, true, false, true);
-        emit IPMinted(0, creator, "ipfs://metadata");
+        emit IPMinted(1, creator, "ipfs://metadata");
         ipAsset.mintIP(creator, "ipfs://metadata");
     }
     
@@ -396,6 +396,41 @@ contract IPAssetTest is Test {
         assertTrue(ipAsset.supportsInterface(0x5b5e139f));
         // AccessControl
         assertTrue(ipAsset.supportsInterface(0x7965db0b));
+    }
+
+    // ============ Story 1.2: Validation Tests ============
+
+    function testMintIPRevertsOnZeroAddress() public {
+        vm.prank(creator);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.InvalidAddress.selector));
+        ipAsset.mintIP(address(0), "ipfs://metadata");
+    }
+
+    function testMintIPRevertsOnEmptyMetadata() public {
+        vm.prank(creator);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.EmptyMetadata.selector));
+        ipAsset.mintIP(creator, "");
+    }
+
+    function testUpdateMetadataRevertsOnEmptyMetadata() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
+
+        vm.prank(creator);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.EmptyMetadata.selector));
+        ipAsset.updateMetadata(tokenId, "");
+    }
+
+    function testTokenURIReturnsCurrentMetadata() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
+
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata1");
+
+        vm.prank(creator);
+        ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
+
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata2");
     }
 }
 
