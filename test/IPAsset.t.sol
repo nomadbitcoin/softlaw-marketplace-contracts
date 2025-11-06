@@ -80,6 +80,7 @@ contract IPAssetTest is Test {
         // Set contract references
         ipAsset.setLicenseTokenContract(address(licenseToken));
         ipAsset.setArbitratorContract(address(arbitrator));
+        ipAsset.setRevenueDistributorContract(address(revenueDistributor));
         
         // Grant roles
         ipAsset.grantRole(ipAsset.LICENSE_MANAGER_ROLE(), address(licenseToken));
@@ -186,15 +187,15 @@ contract IPAssetTest is Test {
     function testNonOwnerCannotConfigureRevenueSplit() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
         address[] memory recipients = new address[](1);
         recipients[0] = creator;
-        
+
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
-        
+
         vm.prank(other);
-        vm.expectRevert("Not token owner");
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.NotTokenOwner.selector));
         ipAsset.configureRevenueSplit(tokenId, recipients, shares);
     }
     

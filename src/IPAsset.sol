@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "./interfaces/IIPAsset.sol";
+import "./interfaces/IRevenueDistributor.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -23,6 +24,7 @@ contract IPAsset is
 
     address public licenseTokenContract;
     address public arbitratorContract;
+    address public revenueDistributor;
 
     uint256 private _tokenIdCounter;
     mapping(uint256 => string) private _metadataURIs;
@@ -107,7 +109,14 @@ contract IPAsset is
         address[] memory recipients,
         uint256[] memory shares
     ) external whenNotPaused {
-        require(ownerOf(tokenId) == msg.sender, "Not token owner");
+        if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+
+        IRevenueDistributor(revenueDistributor).configureSplit(
+            tokenId,
+            recipients,
+            shares
+        );
+
         emit RevenueSplitConfigured(tokenId, recipients, shares);
     }
 
@@ -136,6 +145,10 @@ contract IPAsset is
 
     function setArbitratorContract(address arbitrator) external onlyRole(DEFAULT_ADMIN_ROLE) {
         arbitratorContract = arbitrator;
+    }
+
+    function setRevenueDistributorContract(address distributor) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        revenueDistributor = distributor;
     }
 
     function updateActiveLicenseCount(uint256 tokenId, int256 delta) external onlyRole(LICENSE_MANAGER_ROLE) {

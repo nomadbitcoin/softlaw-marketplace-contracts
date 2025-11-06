@@ -211,6 +211,13 @@ interface IIPAsset {
     function setArbitratorContract(address arbitrator) external;
 
     /**
+     * @notice Updates the RevenueDistributor contract address
+     * @dev Only callable by admin
+     * @param distributor New RevenueDistributor contract address
+     */
+    function setRevenueDistributorContract(address distributor) external;
+
+    /**
      * @notice Updates the active license count for an IP asset
      * @dev Only callable by LICENSE_MANAGER_ROLE (LicenseToken contract)
      * @param tokenId The IP asset token ID
