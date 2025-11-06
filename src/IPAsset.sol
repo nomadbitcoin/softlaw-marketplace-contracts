@@ -104,10 +104,17 @@ contract IPAsset is
     }
 
     function burn(uint256 tokenId) external whenNotPaused {
-        require(ownerOf(tokenId) == msg.sender, "Not token owner");
-        require(activeLicenseCount[tokenId] == 0, "Cannot burn: active licenses exist");
-        require(!_hasActiveDispute[tokenId], "Cannot burn: active dispute");
+        if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+        if (activeLicenseCount[tokenId] > 0) {
+            revert HasActiveLicenses(tokenId, activeLicenseCount[tokenId]);
+        }
+        if (_hasActiveDispute[tokenId]) revert HasActiveDispute(tokenId);
+
         _burn(tokenId);
+
+        delete activeLicenseCount[tokenId];
+        delete _hasActiveDispute[tokenId];
+        delete _metadataURIs[tokenId];
     }
 
     function setDisputeStatus(uint256 tokenId, bool hasDispute) external onlyRole(ARBITRATOR_ROLE) {
@@ -127,7 +134,12 @@ contract IPAsset is
         if (delta > 0) {
             activeLicenseCount[tokenId] += uint256(delta);
         } else {
-            activeLicenseCount[tokenId] -= uint256(-delta);
+            uint256 decrement = uint256(-delta);
+            uint256 current = activeLicenseCount[tokenId];
+            if (current < decrement) {
+                revert LicenseCountUnderflow(tokenId, current, decrement);
+            }
+            activeLicenseCount[tokenId] -= decrement;
         }
     }
 

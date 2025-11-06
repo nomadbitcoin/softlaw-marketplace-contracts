@@ -255,22 +255,13 @@ contract IPAssetTest is Test {
     function testCannotBurnWithActiveLicenses() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
+        // Simulate active license by setting count directly (via LICENSE_MANAGER_ROLE)
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 1);
+
         vm.prank(creator);
-        ipAsset.mintLicense(
-            tokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        vm.prank(creator);
-        vm.expectRevert("Cannot burn: active licenses exist");
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveLicenses.selector, tokenId, 1));
         ipAsset.burn(tokenId);
     }
     
@@ -290,13 +281,13 @@ contract IPAssetTest is Test {
     function testCannotBurnWithActiveDispute() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
         // Simulate active dispute
         vm.prank(address(arbitrator));
         ipAsset.setDisputeStatus(tokenId, true);
-        
+
         vm.prank(creator);
-        vm.expectRevert("Cannot burn: active dispute");
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveDispute.selector, tokenId));
         ipAsset.burn(tokenId);
     }
     
@@ -352,22 +343,13 @@ contract IPAssetTest is Test {
     function testLicenseCountTracking() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
         assertEq(ipAsset.activeLicenseCount(tokenId), 0);
-        
-        vm.prank(creator);
-        ipAsset.mintLicense(
-            tokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
+
+        // Simulate license minting by updating count via LICENSE_MANAGER_ROLE
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 1);
+
         assertEq(ipAsset.activeLicenseCount(tokenId), 1);
     }
     
@@ -398,7 +380,6 @@ contract IPAssetTest is Test {
         assertTrue(ipAsset.supportsInterface(0x7965db0b));
     }
 
-    // ============ Story 1.2: Validation Tests ============
 
     function testMintIPRevertsOnZeroAddress() public {
         vm.prank(creator);
@@ -431,6 +412,93 @@ contract IPAssetTest is Test {
         ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
 
         assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata2");
+    }
+
+    function testNonOwnerCannotBurn() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(other);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.NotTokenOwner.selector));
+        ipAsset.burn(tokenId);
+    }
+
+    function testBurnCleansUpState() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        // Set up some state
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 5);
+
+        vm.prank(address(arbitrator));
+        ipAsset.setDisputeStatus(tokenId, true);
+
+        // Verify state is set
+        assertEq(ipAsset.activeLicenseCount(tokenId), 5);
+        assertTrue(ipAsset.hasActiveDispute(tokenId));
+
+        // Clear state to allow burn
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, -5);
+
+        vm.prank(address(arbitrator));
+        ipAsset.setDisputeStatus(tokenId, false);
+
+        // Burn token
+        vm.prank(creator);
+        ipAsset.burn(tokenId);
+
+        // Verify cleanup - token should not exist
+        vm.expectRevert();
+        ipAsset.ownerOf(tokenId);
+    }
+
+    function testDisputeStatusChangedEvent() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(address(arbitrator));
+        vm.expectEmit(true, false, false, true);
+        emit DisputeStatusChanged(tokenId, true);
+        ipAsset.setDisputeStatus(tokenId, true);
+
+        assertTrue(ipAsset.hasActiveDispute(tokenId));
+    }
+
+    function testUpdateActiveLicenseCountIncrement() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 3);
+
+        assertEq(ipAsset.activeLicenseCount(tokenId), 3);
+    }
+
+    function testUpdateActiveLicenseCountDecrement() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 5);
+
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, -2);
+
+        assertEq(ipAsset.activeLicenseCount(tokenId), 3);
+    }
+
+    function testUpdateActiveLicenseCountUnderflowProtection() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 3);
+
+        vm.prank(address(licenseToken));
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.LicenseCountUnderflow.selector, tokenId, 3, 5));
+        ipAsset.updateActiveLicenseCount(tokenId, -5);
     }
 }
 

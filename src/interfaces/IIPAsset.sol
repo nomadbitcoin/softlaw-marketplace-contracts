@@ -60,6 +60,27 @@ interface IIPAsset {
     /// @notice Thrown when caller is not the token owner
     error NotTokenOwner();
 
+    /**
+     * @notice Thrown when attempting to burn a token with active licenses
+     * @param tokenId The IP asset token ID
+     * @param count Number of active licenses preventing the burn
+     */
+    error HasActiveLicenses(uint256 tokenId, uint256 count);
+
+    /**
+     * @notice Thrown when attempting to burn a token with an active dispute
+     * @param tokenId The IP asset token ID
+     */
+    error HasActiveDispute(uint256 tokenId);
+
+    /**
+     * @notice Thrown when attempting to decrement license count below zero
+     * @param tokenId The IP asset token ID
+     * @param current Current license count
+     * @param attempted Amount attempting to decrement
+     */
+    error LicenseCountUnderflow(uint256 tokenId, uint256 current, uint256 attempted);
+
     // ==================== FUNCTIONS ====================
 
     /**
