@@ -23,13 +23,46 @@ contract RevenueDistributorTest is Test {
     event InterestAccrued(address indexed recipient, uint256 amount, uint256 monthsDelayed);
     
     function setUp() public {
-        vm.prank(admin);
+        vm.startPrank(admin);
         distributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY);
-        
-        vm.prank(admin);
         distributor.grantRole(distributor.CONFIGURATOR_ROLE(), admin);
+        vm.stopPrank();
     }
-    
+
+    function testConstructorSetsVariables() public {
+        vm.prank(admin);
+        RevenueDistributor newDistributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY);
+
+        assertEq(newDistributor.platformTreasury(), treasury);
+        assertEq(newDistributor.platformFeeBasisPoints(), PLATFORM_FEE);
+        assertEq(newDistributor.defaultRoyaltyBasisPoints(), DEFAULT_ROYALTY);
+    }
+
+    function testConstructorGrantsAdminRole() public {
+        vm.prank(admin);
+        RevenueDistributor newDistributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY);
+
+        assertTrue(newDistributor.hasRole(newDistributor.DEFAULT_ADMIN_ROLE(), admin));
+    }
+
+    function testConstructorRevertsWithInvalidTreasury() public {
+        vm.prank(admin);
+        vm.expectRevert("Invalid treasury address");
+        new RevenueDistributor(address(0), PLATFORM_FEE, DEFAULT_ROYALTY);
+    }
+
+    function testConstructorRevertsWithInvalidPlatformFee() public {
+        vm.prank(admin);
+        vm.expectRevert("Invalid platform fee");
+        new RevenueDistributor(treasury, 10001, DEFAULT_ROYALTY);
+    }
+
+    function testConstructorRevertsWithInvalidRoyalty() public {
+        vm.prank(admin);
+        vm.expectRevert("Invalid royalty");
+        new RevenueDistributor(treasury, PLATFORM_FEE, 10001);
+    }
+
     // ============ BR-004.1: Revenue splits MUST sum to exactly 100% ============
     
     function testConfigureSplitWithValidShares() public {
@@ -208,26 +241,26 @@ contract RevenueDistributorTest is Test {
     }
     
     // ============ BR-004.6: Failed distributions MUST NOT block transactions ============
-    
-    function testFailedDistributionDoesNotRevert() public {
+
+    function testDistributionDoesNotRevertWhenRecipientFails() public {
         // Configure split with invalid recipient (contract that rejects ETH)
         RejectETH rejecter = new RejectETH();
-        
+
         address[] memory recipients = new address[](2);
         recipients[0] = address(rejecter);
         recipients[1] = recipient1;
-        
+
         uint256[] memory shares = new uint256[](2);
         shares[0] = 5000;
         shares[1] = 5000;
-        
+
         vm.prank(admin);
         distributor.configureSplit(1, recipients, shares);
-        
+
         // Distribution should not revert even if one recipient fails
         vm.deal(address(this), 1 ether);
         distributor.distributePayment{value: 1 ether}(1, 1 ether);
-        
+
         // recipient1 should still receive their share
         (uint256 principal,,) = distributor.getBalanceWithInterest(recipient1);
         assertGt(principal, 0);

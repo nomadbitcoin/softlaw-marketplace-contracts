@@ -2,10 +2,13 @@
 pragma solidity ^0.8.28;
 
 import "./interfaces/IRevenueDistributor.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 
-contract RevenueDistributor is IRevenueDistributor {
+contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessControl, IERC2981 {
     // State variables
-    address public treasury;
+    address public platformTreasury;
     uint256 public platformFeeBasisPoints;
     uint256 public defaultRoyaltyBasisPoints;
 
@@ -22,9 +25,14 @@ contract RevenueDistributor is IRevenueDistributor {
         uint256 _platformFeeBasisPoints,
         uint256 _defaultRoyaltyBasisPoints
     ) {
-        treasury = _treasury;
+        require(_treasury != address(0), "Invalid treasury address");
+        require(_platformFeeBasisPoints <= 10000, "Invalid platform fee");
+        require(_defaultRoyaltyBasisPoints <= 10000, "Invalid royalty");
+
+        platformTreasury = _treasury;
         platformFeeBasisPoints = _platformFeeBasisPoints;
         defaultRoyaltyBasisPoints = _defaultRoyaltyBasisPoints;
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
     function configureSplit(
@@ -56,7 +64,7 @@ contract RevenueDistributor is IRevenueDistributor {
         return (0, 0, 0);
     }
 
-    function royaltyInfo(uint256 tokenId, uint256 salePrice) external view returns (
+    function royaltyInfo(uint256 tokenId, uint256 salePrice) external view override returns (
         address receiver,
         uint256 royaltyAmount
     ) {
@@ -74,10 +82,8 @@ contract RevenueDistributor is IRevenueDistributor {
         return (_ipSplits[ipAssetId].recipients, _ipSplits[ipAssetId].shares);
     }
 
-    function grantRole(bytes32 role, address account) external {}
-
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == 0x2a55205a; // EIP-2981
+    function supportsInterface(bytes4 interfaceId) public view override(AccessControl, IERC165) returns (bool) {
+        return interfaceId == type(IERC2981).interfaceId || super.supportsInterface(interfaceId);
     }
 
     receive() external payable {}

@@ -97,18 +97,6 @@ interface IRevenueDistributor {
     );
 
     /**
-     * @notice EIP-2981 royalty info function
-     * @param tokenId The NFT token ID
-     * @param salePrice The sale price
-     * @return receiver Address to receive royalty
-     * @return royaltyAmount Royalty amount to pay
-     */
-    function royaltyInfo(uint256 tokenId, uint256 salePrice) external view returns (
-        address receiver,
-        uint256 royaltyAmount
-    );
-
-    /**
      * @notice Sets the default royalty rate
      * @dev Only callable by admin
      * @param basisPoints Royalty rate in basis points
@@ -125,19 +113,4 @@ interface IRevenueDistributor {
         address[] memory recipients,
         uint256[] memory shares
     );
-
-    /**
-     * @notice Grants a role to an account
-     * @dev Only callable by role admin
-     * @param role The role identifier
-     * @param account The account to grant the role to
-     */
-    function grantRole(bytes32 role, address account) external;
-
-    /**
-     * @notice Checks if contract supports a given interface
-     * @param interfaceId The interface identifier (ERC-165)
-     * @return supported Whether the interface is supported
-     */
-    function supportsInterface(bytes4 interfaceId) external view returns (bool supported);
 }
