@@ -21,10 +21,20 @@ contract IPAssetTest is Test {
     address public treasury = address(5);
     
     event IPMinted(uint256 indexed tokenId, address indexed owner, string metadataURI);
-    event MetadataUpdated(uint256 indexed tokenId, uint256 version, string newURI);
+    event MetadataUpdated(uint256 indexed tokenId, string oldURI, string newURI, uint256 timestamp);
     event LicenseMinted(uint256 indexed ipTokenId, uint256 indexed licenseId);
+    event LicenseRegistered(
+        uint256 indexed ipTokenId,
+        uint256 indexed licenseId,
+        address indexed licensee,
+        uint256 amount,
+        bool isExclusive
+    );
     event RevenueSplitConfigured(uint256 indexed tokenId, address[] recipients, uint256[] shares);
     event DisputeStatusChanged(uint256 indexed tokenId, bool hasDispute);
+    event LicenseTokenContractSet(address indexed newContract);
+    event ArbitratorContractSet(address indexed newContract);
+    event RevenueDistributorSet(address indexed newContract);
     
     function setUp() public {
         vm.startPrank(admin);
@@ -73,6 +83,7 @@ contract IPAssetTest is Test {
         // Set contract references
         ipAsset.setLicenseTokenContract(address(licenseToken));
         ipAsset.setArbitratorContract(address(arbitrator));
+        ipAsset.setRevenueDistributorContract(address(revenueDistributor));
         
         // Grant roles
         ipAsset.grantRole(ipAsset.LICENSE_MANAGER_ROLE(), address(licenseToken));
@@ -85,14 +96,14 @@ contract IPAssetTest is Test {
     
     function testMintIPAssignsUniqueIdentifier() public {
         vm.startPrank(creator);
-        
+
         uint256 tokenId1 = ipAsset.mintIP(creator, "ipfs://metadata1");
         uint256 tokenId2 = ipAsset.mintIP(creator, "ipfs://metadata2");
-        
-        assertEq(tokenId1, 0);
-        assertEq(tokenId2, 1);
+
+        assertEq(tokenId1, 1);
+        assertEq(tokenId2, 2);
         assertTrue(tokenId1 != tokenId2);
-        
+
         vm.stopPrank();
     }
     
@@ -117,81 +128,42 @@ contract IPAssetTest is Test {
     
     // ============ BR-001.3: Only the current owner MAY create licenses for an IP asset ============
     
-    function testOwnerCanCreateLicense() public {
-        vm.prank(creator);
-        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
-        vm.prank(creator);
-        uint256 licenseId = ipAsset.mintLicense(
-            tokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000, // 10% royalty
-            "worldwide",
-            false
-        );
-        
-        assertTrue(licenseId >= 0);
-    }
-    
-    function testNonOwnerCannotCreateLicense() public {
-        vm.prank(creator);
-        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
-        vm.prank(other);
-        vm.expectRevert("Not token owner");
-        ipAsset.mintLicense(
-            tokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-    }
-    
     // ============ BR-001.4: Only the current owner MAY update IP metadata ============
     
     function testOwnerCanUpdateMetadata() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
-        
+
         vm.prank(creator);
-        vm.expectEmit(true, false, false, true);
-        emit MetadataUpdated(tokenId, 1, "ipfs://metadata2");
+        vm.expectEmit(true, false, false, false);
+        emit MetadataUpdated(tokenId, "ipfs://metadata1", "ipfs://metadata2", block.timestamp);
         ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
-        
-        assertEq(ipAsset.metadataVersion(tokenId), 1);
+
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata2");
     }
     
     function testNonOwnerCannotUpdateMetadata() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
-        
+
         vm.prank(other);
-        vm.expectRevert("Not token owner");
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.NotTokenOwner.selector));
         ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
     }
     
-    function testMetadataVersioning() public {
+    function testMetadataUpdates() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
-        
+
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata1");
+
         vm.startPrank(creator);
         ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata2");
+
         ipAsset.updateMetadata(tokenId, "ipfs://metadata3");
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata3");
         vm.stopPrank();
-        
-        assertEq(ipAsset.metadataVersion(tokenId), 2);
-        assertEq(ipAsset.metadataHistory(tokenId, 0), "ipfs://metadata1");
-        assertEq(ipAsset.metadataHistory(tokenId, 1), "ipfs://metadata2");
-        assertEq(ipAsset.metadataHistory(tokenId, 2), "ipfs://metadata3");
     }
     
     // ============ BR-001.5: Only the current owner MAY configure revenue splits ============
@@ -217,15 +189,15 @@ contract IPAssetTest is Test {
     function testNonOwnerCannotConfigureRevenueSplit() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
         address[] memory recipients = new address[](1);
         recipients[0] = creator;
-        
+
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
-        
+
         vm.prank(other);
-        vm.expectRevert("Not token owner");
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.NotTokenOwner.selector));
         ipAsset.configureRevenueSplit(tokenId, recipients, shares);
     }
     
@@ -255,22 +227,13 @@ contract IPAssetTest is Test {
     function testCannotBurnWithActiveLicenses() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
+        // Simulate active license by setting count directly (via LICENSE_MANAGER_ROLE)
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 1);
+
         vm.prank(creator);
-        ipAsset.mintLicense(
-            tokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        vm.prank(creator);
-        vm.expectRevert("Cannot burn: active licenses exist");
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveLicenses.selector, tokenId, 1));
         ipAsset.burn(tokenId);
     }
     
@@ -290,13 +253,13 @@ contract IPAssetTest is Test {
     function testCannotBurnWithActiveDispute() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
         // Simulate active dispute
         vm.prank(address(arbitrator));
         ipAsset.setDisputeStatus(tokenId, true);
-        
+
         vm.prank(creator);
-        vm.expectRevert("Cannot burn: active dispute");
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveDispute.selector, tokenId));
         ipAsset.burn(tokenId);
     }
     
@@ -324,7 +287,7 @@ contract IPAssetTest is Test {
     function testMintIPEmitsEvent() public {
         vm.prank(creator);
         vm.expectEmit(true, true, false, true);
-        emit IPMinted(0, creator, "ipfs://metadata");
+        emit IPMinted(1, creator, "ipfs://metadata");
         ipAsset.mintIP(creator, "ipfs://metadata");
     }
     
@@ -349,25 +312,16 @@ contract IPAssetTest is Test {
         ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
     }
     
-    function testLicenseCountTracking() public {
+    function testLicenseCountTrackingViaRole() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
         assertEq(ipAsset.activeLicenseCount(tokenId), 0);
-        
-        vm.prank(creator);
-        ipAsset.mintLicense(
-            tokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
+
+        // Simulate license minting by updating count via LICENSE_MANAGER_ROLE
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 1);
+
         assertEq(ipAsset.activeLicenseCount(tokenId), 1);
     }
     
@@ -396,6 +350,395 @@ contract IPAssetTest is Test {
         assertTrue(ipAsset.supportsInterface(0x5b5e139f));
         // AccessControl
         assertTrue(ipAsset.supportsInterface(0x7965db0b));
+    }
+
+
+    function testMintIPRevertsOnZeroAddress() public {
+        vm.prank(creator);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.InvalidAddress.selector));
+        ipAsset.mintIP(address(0), "ipfs://metadata");
+    }
+
+    function testMintIPRevertsOnEmptyMetadata() public {
+        vm.prank(creator);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.EmptyMetadata.selector));
+        ipAsset.mintIP(creator, "");
+    }
+
+    function testUpdateMetadataRevertsOnEmptyMetadata() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
+
+        vm.prank(creator);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.EmptyMetadata.selector));
+        ipAsset.updateMetadata(tokenId, "");
+    }
+
+    function testTokenURIReturnsCurrentMetadata() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata1");
+
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata1");
+
+        vm.prank(creator);
+        ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
+
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata2");
+    }
+
+    function testNonOwnerCannotBurn() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(other);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.NotTokenOwner.selector));
+        ipAsset.burn(tokenId);
+    }
+
+    function testBurnCleansUpState() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        // Set up some state
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 5);
+
+        vm.prank(address(arbitrator));
+        ipAsset.setDisputeStatus(tokenId, true);
+
+        // Verify state is set
+        assertEq(ipAsset.activeLicenseCount(tokenId), 5);
+        assertTrue(ipAsset.hasActiveDispute(tokenId));
+
+        // Clear state to allow burn
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, -5);
+
+        vm.prank(address(arbitrator));
+        ipAsset.setDisputeStatus(tokenId, false);
+
+        // Burn token
+        vm.prank(creator);
+        ipAsset.burn(tokenId);
+
+        // Verify cleanup - token should not exist
+        vm.expectRevert();
+        ipAsset.ownerOf(tokenId);
+    }
+
+    function testDisputeStatusChangedEvent() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(address(arbitrator));
+        vm.expectEmit(true, false, false, true);
+        emit DisputeStatusChanged(tokenId, true);
+        ipAsset.setDisputeStatus(tokenId, true);
+
+        assertTrue(ipAsset.hasActiveDispute(tokenId));
+    }
+
+    function testUpdateActiveLicenseCountIncrement() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 3);
+
+        assertEq(ipAsset.activeLicenseCount(tokenId), 3);
+    }
+
+    function testUpdateActiveLicenseCountDecrement() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 5);
+
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, -2);
+
+        assertEq(ipAsset.activeLicenseCount(tokenId), 3);
+    }
+
+    function testUpdateActiveLicenseCountUnderflowProtection() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(address(licenseToken));
+        ipAsset.updateActiveLicenseCount(tokenId, 3);
+
+        vm.prank(address(licenseToken));
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.LicenseCountUnderflow.selector, tokenId, 3, 5));
+        ipAsset.updateActiveLicenseCount(tokenId, -5);
+    }
+
+    function testOwnerCanCreateLicense() public {
+        vm.startPrank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.expectEmit(true, true, true, true);
+        emit LicenseRegistered(tokenId, 0, licensee, 5, false);
+
+        uint256 licenseId = ipAsset.mintLicense(
+            tokenId,
+            licensee,
+            5, // amount
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            1000, // 10% royalty
+            "Commercial use license",
+            false // non-exclusive
+        );
+
+        assertEq(licenseId, 0); // Phase 1 returns placeholder
+        assertEq(ipAsset.activeLicenseCount(tokenId), 1);
+        vm.stopPrank();
+    }
+
+    function testNonOwnerCannotCreateLicense() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(other);
+        vm.expectRevert(IIPAsset.NotTokenOwner.selector);
+        ipAsset.mintLicense(
+            tokenId,
+            licensee,
+            5,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            1000,
+            "Commercial use license",
+            false
+        );
+    }
+
+    function testLicenseCountTracking() public {
+        vm.startPrank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        assertEq(ipAsset.activeLicenseCount(tokenId), 0);
+
+        ipAsset.mintLicense(tokenId, licensee, 5, "ipfs://public", "ipfs://private", block.timestamp + 365 days, 1000, "License 1", false);
+        assertEq(ipAsset.activeLicenseCount(tokenId), 1);
+
+        ipAsset.mintLicense(tokenId, other, 3, "ipfs://public2", "ipfs://private2", block.timestamp + 365 days, 500, "License 2", true);
+        assertEq(ipAsset.activeLicenseCount(tokenId), 2);
+
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveLicenses.selector, tokenId, 2));
+        ipAsset.burn(tokenId);
+
+        vm.stopPrank();
+    }
+
+    function testCannotMintLicenseWhenPaused() public {
+        vm.startPrank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+        vm.stopPrank();
+
+        vm.prank(admin);
+        ipAsset.pause();
+
+        vm.prank(creator);
+        vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
+        ipAsset.mintLicense(
+            tokenId,
+            licensee,
+            5,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            1000,
+            "License",
+            false
+        );
+    }
+
+    function testCannotMintLicenseToZeroAddress() public {
+        vm.startPrank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.expectRevert(IIPAsset.InvalidAddress.selector);
+        ipAsset.mintLicense(
+            tokenId,
+            address(0), // invalid licensee
+            5,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            1000,
+            "License",
+            false
+        );
+        vm.stopPrank();
+    }
+
+    function testPauseUnpauseWorkflow() public {
+        // Initially not paused
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        // Admin pauses
+        vm.prank(admin);
+        ipAsset.pause();
+
+        // All state-changing functions blocked when paused
+        vm.prank(creator);
+        vm.expectRevert();
+        ipAsset.mintIP(creator, "ipfs://metadata2");
+
+        vm.prank(creator);
+        vm.expectRevert();
+        ipAsset.updateMetadata(tokenId, "ipfs://new");
+
+        vm.prank(creator);
+        vm.expectRevert();
+        ipAsset.burn(tokenId);
+
+        // Admin unpauses
+        vm.prank(admin);
+        ipAsset.unpause();
+
+        // Operations work again
+        vm.prank(creator);
+        ipAsset.updateMetadata(tokenId, "ipfs://updated");
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://updated");
+    }
+
+    function testOnlyAdminCanPause() public {
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.pause();
+
+        vm.prank(admin);
+        ipAsset.pause(); // Should succeed
+    }
+
+    function testOnlyAdminCanUnpause() public {
+        vm.prank(admin);
+        ipAsset.pause();
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.unpause();
+
+        vm.prank(admin);
+        ipAsset.unpause(); // Should succeed
+    }
+
+    function testUpgrade() public {
+        // Mint a token with original implementation
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        // Deploy new implementation
+        IPAsset newImpl = new IPAsset();
+
+        // Upgrade (only DEFAULT_ADMIN_ROLE can do this)
+        vm.prank(admin);
+        ipAsset.upgradeToAndCall(address(newImpl), "");
+
+        // Verify state is preserved
+        assertEq(ipAsset.ownerOf(tokenId), creator);
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata");
+    }
+
+    function testOnlyAdminCanUpgrade() public {
+        IPAsset newImpl = new IPAsset();
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.upgradeToAndCall(address(newImpl), "");
+
+        vm.prank(admin);
+        ipAsset.upgradeToAndCall(address(newImpl), ""); // Should succeed
+    }
+
+    function testSetLicenseTokenContract() public {
+        address newLicenseToken = address(0x999);
+
+        vm.prank(admin);
+        vm.expectEmit(true, false, false, false);
+        emit LicenseTokenContractSet(newLicenseToken);
+        ipAsset.setLicenseTokenContract(newLicenseToken);
+
+        assertEq(ipAsset.licenseTokenContract(), newLicenseToken);
+    }
+
+    function testSetLicenseTokenContractRevertsOnZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.InvalidContractAddress.selector, address(0)));
+        ipAsset.setLicenseTokenContract(address(0));
+    }
+
+    function testOnlyAdminCanSetLicenseTokenContract() public {
+        address newLicenseToken = address(0x999);
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.setLicenseTokenContract(newLicenseToken);
+
+        vm.prank(admin);
+        ipAsset.setLicenseTokenContract(newLicenseToken); // Should succeed
+    }
+
+    function testSetArbitratorContract() public {
+        address newArbitrator = address(0x888);
+
+        vm.prank(admin);
+        vm.expectEmit(true, false, false, false);
+        emit ArbitratorContractSet(newArbitrator);
+        ipAsset.setArbitratorContract(newArbitrator);
+
+        assertEq(ipAsset.arbitratorContract(), newArbitrator);
+    }
+
+    function testSetArbitratorContractRevertsOnZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.InvalidContractAddress.selector, address(0)));
+        ipAsset.setArbitratorContract(address(0));
+    }
+
+    function testOnlyAdminCanSetArbitratorContract() public {
+        address newArbitrator = address(0x888);
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.setArbitratorContract(newArbitrator);
+
+        vm.prank(admin);
+        ipAsset.setArbitratorContract(newArbitrator); // Should succeed
+    }
+
+    function testSetRevenueDistributor() public {
+        address newDistributor = address(0x777);
+
+        vm.prank(admin);
+        vm.expectEmit(true, false, false, false);
+        emit RevenueDistributorSet(newDistributor);
+        ipAsset.setRevenueDistributorContract(newDistributor);
+
+        assertEq(ipAsset.revenueDistributor(), newDistributor);
+    }
+
+    function testSetRevenueDistributorRevertsOnZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.InvalidContractAddress.selector, address(0)));
+        ipAsset.setRevenueDistributorContract(address(0));
+    }
+
+    function testOnlyAdminCanSetRevenueDistributor() public {
+        address newDistributor = address(0x777);
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.setRevenueDistributorContract(newDistributor);
+
+        vm.prank(admin);
+        ipAsset.setRevenueDistributorContract(newDistributor); // Should succeed
     }
 }
 

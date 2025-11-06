@@ -20,10 +20,12 @@ interface IIPAsset {
     /**
      * @notice Emitted when IP metadata is updated
      * @param tokenId The ID of the token being updated
-     * @param version The new version number
+     * @param oldURI The previous metadata URI
      * @param newURI The new metadata URI
+     * @param timestamp The block timestamp when update occurred
+     * @dev Includes old and new URIs for complete off-chain indexing without state tracking
      */
-    event MetadataUpdated(uint256 indexed tokenId, uint256 version, string newURI);
+    event MetadataUpdated(uint256 indexed tokenId, string oldURI, string newURI, uint256 timestamp);
 
     /**
      * @notice Emitted when a license is minted for an IP asset
@@ -31,6 +33,25 @@ interface IIPAsset {
      * @param licenseId The newly created license ID
      */
     event LicenseMinted(uint256 indexed ipTokenId, uint256 indexed licenseId);
+
+    /**
+     * @notice Emitted when a license is registered for an IP asset
+     * @dev This event provides complete license context for off-chain indexing without requiring array storage.
+     *      Indexers can build complete license lists by filtering this event by ipTokenId.
+     *      This replaces the need for on-chain ipToLicenses[] array storage (gas optimization).
+     * @param ipTokenId The IP asset token ID this license is for
+     * @param licenseId The ID of the newly registered license (0 in Phase 1 stub)
+     * @param licensee The address receiving the license
+     * @param amount Number of license tokens minted (for semi-fungible licenses)
+     * @param isExclusive Whether this is an exclusive license
+     */
+    event LicenseRegistered(
+        uint256 indexed ipTokenId,
+        uint256 indexed licenseId,
+        address indexed licensee,
+        uint256 amount,
+        bool isExclusive
+    );
 
     /**
      * @notice Emitted when revenue split is configured for an IP asset
@@ -46,6 +67,62 @@ interface IIPAsset {
      * @param hasDispute Whether the asset now has an active dispute
      */
     event DisputeStatusChanged(uint256 indexed tokenId, bool hasDispute);
+
+    /**
+     * @notice Emitted when the LicenseToken contract address is updated
+     * @param newContract The new LicenseToken contract address
+     */
+    event LicenseTokenContractSet(address indexed newContract);
+
+    /**
+     * @notice Emitted when the GovernanceArbitrator contract address is updated
+     * @param newContract The new GovernanceArbitrator contract address
+     */
+    event ArbitratorContractSet(address indexed newContract);
+
+    /**
+     * @notice Emitted when the RevenueDistributor contract address is updated
+     * @param newContract The new RevenueDistributor contract address
+     */
+    event RevenueDistributorSet(address indexed newContract);
+
+    // ==================== ERRORS ====================
+
+    /// @notice Thrown when attempting to mint to zero address
+    error InvalidAddress();
+
+    /**
+     * @notice Thrown when setting a contract address to zero address
+     * @param contractAddress The invalid address that was attempted
+     */
+    error InvalidContractAddress(address contractAddress);
+
+    /// @notice Thrown when metadata URI is empty
+    error EmptyMetadata();
+
+    /// @notice Thrown when caller is not the token owner
+    error NotTokenOwner();
+
+    /**
+     * @notice Thrown when attempting to burn a token with active licenses
+     * @param tokenId The IP asset token ID
+     * @param count Number of active licenses preventing the burn
+     */
+    error HasActiveLicenses(uint256 tokenId, uint256 count);
+
+    /**
+     * @notice Thrown when attempting to burn a token with an active dispute
+     * @param tokenId The IP asset token ID
+     */
+    error HasActiveDispute(uint256 tokenId);
+
+    /**
+     * @notice Thrown when attempting to decrement license count below zero
+     * @param tokenId The IP asset token ID
+     * @param current Current license count
+     * @param attempted Amount attempting to decrement
+     */
+    error LicenseCountUnderflow(uint256 tokenId, uint256 current, uint256 attempted);
 
     // ==================== FUNCTIONS ====================
 
@@ -77,7 +154,13 @@ interface IIPAsset {
 
     /**
      * @notice Creates a new license for an IP asset
-     * @dev Only the IP asset owner can mint licenses. Delegates to LicenseToken contract.
+     * @dev PHASE 1 (Epic 1): Minimal stub implementation that increments activeLicenseCount for burn protection testing.
+     *      Returns placeholder license ID (0). Emits LicenseRegistered event for off-chain tracking.
+     *
+     *      PHASE 2 (Epic 3, Story 3.2): Will delegate to LicenseToken contract which calls back to
+     *      updateActiveLicenseCount(). The temporary increment will be removed at that time.
+     *
+     *      Only the IP asset owner can mint licenses.
      * @param ipTokenId The IP asset to create a license for
      * @param licensee Address to receive the license
      * @param amount Number of license tokens to mint (for semi-fungible licenses)
@@ -87,7 +170,7 @@ interface IIPAsset {
      * @param royaltyBasisPoints Royalty rate in basis points (e.g., 1000 = 10%)
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
-     * @return licenseId The ID of the newly created license
+     * @return licenseId The ID of the newly created license (0 in Phase 1, real ID in Phase 2)
      */
     function mintLicense(
         uint256 ipTokenId,
@@ -152,6 +235,13 @@ interface IIPAsset {
     function setArbitratorContract(address arbitrator) external;
 
     /**
+     * @notice Updates the RevenueDistributor contract address
+     * @dev Only callable by admin
+     * @param distributor New RevenueDistributor contract address
+     */
+    function setRevenueDistributorContract(address distributor) external;
+
+    /**
      * @notice Updates the active license count for an IP asset
      * @dev Only callable by LICENSE_MANAGER_ROLE (LicenseToken contract)
      * @param tokenId The IP asset token ID
@@ -168,69 +258,13 @@ interface IIPAsset {
 
     /**
      * @notice Pauses all state-changing operations
-     * @dev Only callable by PAUSER_ROLE
+     * @dev Only callable by DEFAULT_ADMIN_ROLE
      */
     function pause() external;
 
     /**
      * @notice Unpauses all state-changing operations
-     * @dev Only callable by PAUSER_ROLE
+     * @dev Only callable by DEFAULT_ADMIN_ROLE
      */
     function unpause() external;
-
-    /**
-     * @notice Grants a role to an account
-     * @dev Only callable by role admin (typically DEFAULT_ADMIN_ROLE)
-     * @param role The role identifier
-     * @param account The account to grant the role to
-     */
-    function grantRole(bytes32 role, address account) external;
-
-    /**
-     * @notice Upgrades the contract implementation (UUPS pattern)
-     * @dev Only callable by UPGRADER_ROLE
-     * @param newImplementation Address of the new implementation contract
-     * @param data Optional data for initialization call
-     */
-    function upgradeToAndCall(address newImplementation, bytes memory data) external;
-
-    /**
-     * @notice Checks if contract supports a given interface
-     * @param interfaceId The interface identifier (ERC-165)
-     * @return supported Whether the interface is supported
-     */
-    function supportsInterface(bytes4 interfaceId) external view returns (bool supported);
-
-    // ==================== ERC-721 STANDARD FUNCTIONS ====================
-
-    /**
-     * @notice Returns the owner of a token
-     * @param tokenId The token ID
-     * @return owner The address owning the token
-     */
-    function ownerOf(uint256 tokenId) external view returns (address owner);
-
-    /**
-     * @notice Transfers a token from one address to another
-     * @dev Caller must be owner or approved
-     * @param from Current owner of the token
-     * @param to Address to receive the token
-     * @param tokenId Token ID to transfer
-     */
-    function transferFrom(address from, address to, uint256 tokenId) external;
-
-    /**
-     * @notice Approves an address to transfer a specific token
-     * @dev Caller must be token owner
-     * @param to Address to approve
-     * @param tokenId Token ID to approve
-     */
-    function approve(address to, uint256 tokenId) external;
-
-    /**
-     * @notice Returns the token URI for metadata
-     * @param tokenId The token ID
-     * @return uri The metadata URI
-     */
-    function tokenURI(uint256 tokenId) external view returns (string memory uri);
 }
