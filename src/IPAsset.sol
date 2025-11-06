@@ -43,7 +43,6 @@ contract IPAsset is
         __ERC721_init(name, symbol);
         __AccessControl_init();
         __Pausable_init();
-        __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
 

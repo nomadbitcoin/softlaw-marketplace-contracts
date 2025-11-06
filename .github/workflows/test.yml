@@ -21,7 +21,7 @@ jobs:
         run: forge --version
 
       - name: Install dependencies
-        run: forge install foundry-rs/forge-std@v1.9.6
-
-      - name: Run base contract tests
-        run: forge test --match-path "test/base/*.t.sol" --quiet
+        run: forge install foundry-rs/forge-std@v1.9.6 OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable
+        
+      - name: Run IPAsset contract tests
+        run: forge test --match-path "IPAssetTest"
