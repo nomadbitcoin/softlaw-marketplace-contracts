@@ -32,6 +32,9 @@ contract IPAssetTest is Test {
     );
     event RevenueSplitConfigured(uint256 indexed tokenId, address[] recipients, uint256[] shares);
     event DisputeStatusChanged(uint256 indexed tokenId, bool hasDispute);
+    event LicenseTokenContractSet(address indexed newContract);
+    event ArbitratorContractSet(address indexed newContract);
+    event RevenueDistributorSet(address indexed newContract);
     
     function setUp() public {
         vm.startPrank(admin);
@@ -124,7 +127,6 @@ contract IPAssetTest is Test {
     }
     
     // ============ BR-001.3: Only the current owner MAY create licenses for an IP asset ============
-    // Tests moved to Story 1.4 section below
     
     // ============ BR-001.4: Only the current owner MAY update IP metadata ============
     
@@ -471,8 +473,6 @@ contract IPAssetTest is Test {
         ipAsset.updateActiveLicenseCount(tokenId, -5);
     }
 
-    // ============ Story 1.4: License Integration Stub Tests ============
-
     function testOwnerCanCreateLicense() public {
         vm.startPrank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
@@ -574,6 +574,171 @@ contract IPAssetTest is Test {
             false
         );
         vm.stopPrank();
+    }
+
+    function testPauseUnpauseWorkflow() public {
+        // Initially not paused
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        // Admin pauses
+        vm.prank(admin);
+        ipAsset.pause();
+
+        // All state-changing functions blocked when paused
+        vm.prank(creator);
+        vm.expectRevert();
+        ipAsset.mintIP(creator, "ipfs://metadata2");
+
+        vm.prank(creator);
+        vm.expectRevert();
+        ipAsset.updateMetadata(tokenId, "ipfs://new");
+
+        vm.prank(creator);
+        vm.expectRevert();
+        ipAsset.burn(tokenId);
+
+        // Admin unpauses
+        vm.prank(admin);
+        ipAsset.unpause();
+
+        // Operations work again
+        vm.prank(creator);
+        ipAsset.updateMetadata(tokenId, "ipfs://updated");
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://updated");
+    }
+
+    function testOnlyAdminCanPause() public {
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.pause();
+
+        vm.prank(admin);
+        ipAsset.pause(); // Should succeed
+    }
+
+    function testOnlyAdminCanUnpause() public {
+        vm.prank(admin);
+        ipAsset.pause();
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.unpause();
+
+        vm.prank(admin);
+        ipAsset.unpause(); // Should succeed
+    }
+
+    function testUpgrade() public {
+        // Mint a token with original implementation
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        // Deploy new implementation
+        IPAsset newImpl = new IPAsset();
+
+        // Upgrade (only DEFAULT_ADMIN_ROLE can do this)
+        vm.prank(admin);
+        ipAsset.upgradeToAndCall(address(newImpl), "");
+
+        // Verify state is preserved
+        assertEq(ipAsset.ownerOf(tokenId), creator);
+        assertEq(ipAsset.tokenURI(tokenId), "ipfs://metadata");
+    }
+
+    function testOnlyAdminCanUpgrade() public {
+        IPAsset newImpl = new IPAsset();
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.upgradeToAndCall(address(newImpl), "");
+
+        vm.prank(admin);
+        ipAsset.upgradeToAndCall(address(newImpl), ""); // Should succeed
+    }
+
+    function testSetLicenseTokenContract() public {
+        address newLicenseToken = address(0x999);
+
+        vm.prank(admin);
+        vm.expectEmit(true, false, false, false);
+        emit LicenseTokenContractSet(newLicenseToken);
+        ipAsset.setLicenseTokenContract(newLicenseToken);
+
+        assertEq(ipAsset.licenseTokenContract(), newLicenseToken);
+    }
+
+    function testSetLicenseTokenContractRevertsOnZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.InvalidContractAddress.selector, address(0)));
+        ipAsset.setLicenseTokenContract(address(0));
+    }
+
+    function testOnlyAdminCanSetLicenseTokenContract() public {
+        address newLicenseToken = address(0x999);
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.setLicenseTokenContract(newLicenseToken);
+
+        vm.prank(admin);
+        ipAsset.setLicenseTokenContract(newLicenseToken); // Should succeed
+    }
+
+    function testSetArbitratorContract() public {
+        address newArbitrator = address(0x888);
+
+        vm.prank(admin);
+        vm.expectEmit(true, false, false, false);
+        emit ArbitratorContractSet(newArbitrator);
+        ipAsset.setArbitratorContract(newArbitrator);
+
+        assertEq(ipAsset.arbitratorContract(), newArbitrator);
+    }
+
+    function testSetArbitratorContractRevertsOnZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.InvalidContractAddress.selector, address(0)));
+        ipAsset.setArbitratorContract(address(0));
+    }
+
+    function testOnlyAdminCanSetArbitratorContract() public {
+        address newArbitrator = address(0x888);
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.setArbitratorContract(newArbitrator);
+
+        vm.prank(admin);
+        ipAsset.setArbitratorContract(newArbitrator); // Should succeed
+    }
+
+    function testSetRevenueDistributor() public {
+        address newDistributor = address(0x777);
+
+        vm.prank(admin);
+        vm.expectEmit(true, false, false, false);
+        emit RevenueDistributorSet(newDistributor);
+        ipAsset.setRevenueDistributorContract(newDistributor);
+
+        assertEq(ipAsset.revenueDistributor(), newDistributor);
+    }
+
+    function testSetRevenueDistributorRevertsOnZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.InvalidContractAddress.selector, address(0)));
+        ipAsset.setRevenueDistributorContract(address(0));
+    }
+
+    function testOnlyAdminCanSetRevenueDistributor() public {
+        address newDistributor = address(0x777);
+
+        vm.prank(other);
+        vm.expectRevert();
+        ipAsset.setRevenueDistributorContract(newDistributor);
+
+        vm.prank(admin);
+        ipAsset.setRevenueDistributorContract(newDistributor); // Should succeed
     }
 }
 

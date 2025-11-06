@@ -68,10 +68,34 @@ interface IIPAsset {
      */
     event DisputeStatusChanged(uint256 indexed tokenId, bool hasDispute);
 
+    /**
+     * @notice Emitted when the LicenseToken contract address is updated
+     * @param newContract The new LicenseToken contract address
+     */
+    event LicenseTokenContractSet(address indexed newContract);
+
+    /**
+     * @notice Emitted when the GovernanceArbitrator contract address is updated
+     * @param newContract The new GovernanceArbitrator contract address
+     */
+    event ArbitratorContractSet(address indexed newContract);
+
+    /**
+     * @notice Emitted when the RevenueDistributor contract address is updated
+     * @param newContract The new RevenueDistributor contract address
+     */
+    event RevenueDistributorSet(address indexed newContract);
+
     // ==================== ERRORS ====================
 
     /// @notice Thrown when attempting to mint to zero address
     error InvalidAddress();
+
+    /**
+     * @notice Thrown when setting a contract address to zero address
+     * @param contractAddress The invalid address that was attempted
+     */
+    error InvalidContractAddress(address contractAddress);
 
     /// @notice Thrown when metadata URI is empty
     error EmptyMetadata();
@@ -234,13 +258,13 @@ interface IIPAsset {
 
     /**
      * @notice Pauses all state-changing operations
-     * @dev Only callable by PAUSER_ROLE
+     * @dev Only callable by DEFAULT_ADMIN_ROLE
      */
     function pause() external;
 
     /**
      * @notice Unpauses all state-changing operations
-     * @dev Only callable by PAUSER_ROLE
+     * @dev Only callable by DEFAULT_ADMIN_ROLE
      */
     function unpause() external;
 }

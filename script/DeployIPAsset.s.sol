@@ -45,8 +45,6 @@ contract DeployIPAsset is Script {
         // Verify initialization
         IPAsset ipAsset = IPAsset(address(proxy));
         console.log("\n=== Verification ===");
-        console.log("Has PAUSER_ROLE:", ipAsset.hasRole(ipAsset.PAUSER_ROLE(), deployer));
-        console.log("Has UPGRADER_ROLE:", ipAsset.hasRole(ipAsset.UPGRADER_ROLE(), deployer));
         console.log("Has DEFAULT_ADMIN_ROLE:", ipAsset.hasRole(ipAsset.DEFAULT_ADMIN_ROLE(), deployer));
     }
 }

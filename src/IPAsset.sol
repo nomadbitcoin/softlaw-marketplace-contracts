@@ -17,8 +17,6 @@ contract IPAsset is
     UUPSUpgradeable,
     IIPAsset
 {
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     bytes32 public constant LICENSE_MANAGER_ROLE = keccak256("LICENSE_MANAGER_ROLE");
     bytes32 public constant ARBITRATOR_ROLE = keccak256("ARBITRATOR_ROLE");
 
@@ -48,8 +46,6 @@ contract IPAsset is
         __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(PAUSER_ROLE, admin);
-        _grantRole(UPGRADER_ROLE, admin);
 
         licenseTokenContract = licenseToken;
         arbitratorContract = arbitrator;
@@ -140,15 +136,21 @@ contract IPAsset is
     }
 
     function setLicenseTokenContract(address licenseToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (licenseToken == address(0)) revert InvalidContractAddress(licenseToken);
         licenseTokenContract = licenseToken;
+        emit LicenseTokenContractSet(licenseToken);
     }
 
     function setArbitratorContract(address arbitrator) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (arbitrator == address(0)) revert InvalidContractAddress(arbitrator);
         arbitratorContract = arbitrator;
+        emit ArbitratorContractSet(arbitrator);
     }
 
     function setRevenueDistributorContract(address distributor) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (distributor == address(0)) revert InvalidContractAddress(distributor);
         revenueDistributor = distributor;
+        emit RevenueDistributorSet(distributor);
     }
 
     function updateActiveLicenseCount(uint256 tokenId, int256 delta) external onlyRole(LICENSE_MANAGER_ROLE) {
@@ -168,11 +170,11 @@ contract IPAsset is
         return _hasActiveDispute[tokenId];
     }
 
-    function pause() external onlyRole(PAUSER_ROLE) {
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
     }
 
-    function unpause() external onlyRole(PAUSER_ROLE) {
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
     }
 
@@ -187,5 +189,5 @@ contract IPAsset is
             AccessControlUpgradeable.supportsInterface(interfaceId);
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 }
