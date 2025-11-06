@@ -35,6 +35,25 @@ interface IIPAsset {
     event LicenseMinted(uint256 indexed ipTokenId, uint256 indexed licenseId);
 
     /**
+     * @notice Emitted when a license is registered for an IP asset
+     * @dev This event provides complete license context for off-chain indexing without requiring array storage.
+     *      Indexers can build complete license lists by filtering this event by ipTokenId.
+     *      This replaces the need for on-chain ipToLicenses[] array storage (gas optimization).
+     * @param ipTokenId The IP asset token ID this license is for
+     * @param licenseId The ID of the newly registered license (0 in Phase 1 stub)
+     * @param licensee The address receiving the license
+     * @param amount Number of license tokens minted (for semi-fungible licenses)
+     * @param isExclusive Whether this is an exclusive license
+     */
+    event LicenseRegistered(
+        uint256 indexed ipTokenId,
+        uint256 indexed licenseId,
+        address indexed licensee,
+        uint256 amount,
+        bool isExclusive
+    );
+
+    /**
      * @notice Emitted when revenue split is configured for an IP asset
      * @param tokenId The IP asset token ID
      * @param recipients Array of recipient addresses
@@ -111,7 +130,13 @@ interface IIPAsset {
 
     /**
      * @notice Creates a new license for an IP asset
-     * @dev Only the IP asset owner can mint licenses. Delegates to LicenseToken contract.
+     * @dev PHASE 1 (Epic 1): Minimal stub implementation that increments activeLicenseCount for burn protection testing.
+     *      Returns placeholder license ID (0). Emits LicenseRegistered event for off-chain tracking.
+     *
+     *      PHASE 2 (Epic 3, Story 3.2): Will delegate to LicenseToken contract which calls back to
+     *      updateActiveLicenseCount(). The temporary increment will be removed at that time.
+     *
+     *      Only the IP asset owner can mint licenses.
      * @param ipTokenId The IP asset to create a license for
      * @param licensee Address to receive the license
      * @param amount Number of license tokens to mint (for semi-fungible licenses)
@@ -121,7 +146,7 @@ interface IIPAsset {
      * @param royaltyBasisPoints Royalty rate in basis points (e.g., 1000 = 10%)
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
-     * @return licenseId The ID of the newly created license
+     * @return licenseId The ID of the newly created license (0 in Phase 1, real ID in Phase 2)
      */
     function mintLicense(
         uint256 ipTokenId,

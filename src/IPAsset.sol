@@ -75,9 +75,17 @@ contract IPAsset is
         uint256 royaltyBasisPoints,
         string memory terms,
         bool isExclusive
-    ) external returns (uint256) {
-        require(ownerOf(ipTokenId) == msg.sender, "Not token owner");
-        return 0; // TODO: Return actual licenseId from LicenseToken
+    ) external whenNotPaused returns (uint256) {
+        if (ownerOf(ipTokenId) != msg.sender) revert NotTokenOwner();
+        if (licensee == address(0)) revert InvalidAddress();
+
+        // TODO: REMOVE IN EPIC 3 STORY 3.2 - Replace with LicenseToken integration
+        // PHASE 1: Temporary increment for burn protection tests
+        // PHASE 2: LicenseToken will callback to updateActiveLicenseCount()
+        activeLicenseCount[ipTokenId]++;
+
+        emit LicenseRegistered(ipTokenId, 0, licensee, amount, isExclusive);
+        return 0; // Placeholder - will return real ID in Phase 2
     }
 
     function updateMetadata(uint256 tokenId, string memory newURI) external whenNotPaused {

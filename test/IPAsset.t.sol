@@ -23,6 +23,13 @@ contract IPAssetTest is Test {
     event IPMinted(uint256 indexed tokenId, address indexed owner, string metadataURI);
     event MetadataUpdated(uint256 indexed tokenId, string oldURI, string newURI, uint256 timestamp);
     event LicenseMinted(uint256 indexed ipTokenId, uint256 indexed licenseId);
+    event LicenseRegistered(
+        uint256 indexed ipTokenId,
+        uint256 indexed licenseId,
+        address indexed licensee,
+        uint256 amount,
+        bool isExclusive
+    );
     event RevenueSplitConfigured(uint256 indexed tokenId, address[] recipients, uint256[] shares);
     event DisputeStatusChanged(uint256 indexed tokenId, bool hasDispute);
     
@@ -116,45 +123,7 @@ contract IPAssetTest is Test {
     }
     
     // ============ BR-001.3: Only the current owner MAY create licenses for an IP asset ============
-    
-    function testOwnerCanCreateLicense() public {
-        vm.prank(creator);
-        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
-        vm.prank(creator);
-        uint256 licenseId = ipAsset.mintLicense(
-            tokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000, // 10% royalty
-            "worldwide",
-            false
-        );
-        
-        assertTrue(licenseId >= 0);
-    }
-    
-    function testNonOwnerCannotCreateLicense() public {
-        vm.prank(creator);
-        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
-        vm.prank(other);
-        vm.expectRevert("Not token owner");
-        ipAsset.mintLicense(
-            tokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-    }
+    // Tests moved to Story 1.4 section below
     
     // ============ BR-001.4: Only the current owner MAY update IP metadata ============
     
@@ -340,7 +309,7 @@ contract IPAssetTest is Test {
         ipAsset.updateMetadata(tokenId, "ipfs://metadata2");
     }
     
-    function testLicenseCountTracking() public {
+    function testLicenseCountTrackingViaRole() public {
         vm.prank(creator);
         uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
 
@@ -499,6 +468,111 @@ contract IPAssetTest is Test {
         vm.prank(address(licenseToken));
         vm.expectRevert(abi.encodeWithSelector(IIPAsset.LicenseCountUnderflow.selector, tokenId, 3, 5));
         ipAsset.updateActiveLicenseCount(tokenId, -5);
+    }
+
+    // ============ Story 1.4: License Integration Stub Tests ============
+
+    function testOwnerCanCreateLicense() public {
+        vm.startPrank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.expectEmit(true, true, true, true);
+        emit LicenseRegistered(tokenId, 0, licensee, 5, false);
+
+        uint256 licenseId = ipAsset.mintLicense(
+            tokenId,
+            licensee,
+            5, // amount
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            1000, // 10% royalty
+            "Commercial use license",
+            false // non-exclusive
+        );
+
+        assertEq(licenseId, 0); // Phase 1 returns placeholder
+        assertEq(ipAsset.activeLicenseCount(tokenId), 1);
+        vm.stopPrank();
+    }
+
+    function testNonOwnerCannotCreateLicense() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(other);
+        vm.expectRevert(IIPAsset.NotTokenOwner.selector);
+        ipAsset.mintLicense(
+            tokenId,
+            licensee,
+            5,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            1000,
+            "Commercial use license",
+            false
+        );
+    }
+
+    function testLicenseCountTracking() public {
+        vm.startPrank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        assertEq(ipAsset.activeLicenseCount(tokenId), 0);
+
+        ipAsset.mintLicense(tokenId, licensee, 5, "ipfs://public", "ipfs://private", block.timestamp + 365 days, 1000, "License 1", false);
+        assertEq(ipAsset.activeLicenseCount(tokenId), 1);
+
+        ipAsset.mintLicense(tokenId, other, 3, "ipfs://public2", "ipfs://private2", block.timestamp + 365 days, 500, "License 2", true);
+        assertEq(ipAsset.activeLicenseCount(tokenId), 2);
+
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveLicenses.selector, tokenId, 2));
+        ipAsset.burn(tokenId);
+
+        vm.stopPrank();
+    }
+
+    function testCannotMintLicenseWhenPaused() public {
+        vm.startPrank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+        vm.stopPrank();
+
+        vm.prank(admin);
+        ipAsset.pause();
+
+        vm.prank(creator);
+        vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
+        ipAsset.mintLicense(
+            tokenId,
+            licensee,
+            5,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            1000,
+            "License",
+            false
+        );
+    }
+
+    function testCannotMintLicenseToZeroAddress() public {
+        vm.startPrank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.expectRevert(IIPAsset.InvalidAddress.selector);
+        ipAsset.mintLicense(
+            tokenId,
+            address(0), // invalid licensee
+            5,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            1000,
+            "License",
+            false
+        );
+        vm.stopPrank();
     }
 }
 
