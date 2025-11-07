@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../src/RevenueDistributor.sol";
+import "../src/interfaces/IRevenueDistributor.sol";
 
 contract RevenueDistributorTest is Test {
     RevenueDistributor public distributor;
@@ -89,13 +90,13 @@ contract RevenueDistributorTest is Test {
         address[] memory recipients = new address[](2);
         recipients[0] = recipient1;
         recipients[1] = recipient2;
-        
+
         uint256[] memory shares = new uint256[](2);
         shares[0] = 6000; // 60%
         shares[1] = 3000; // 30% - Total = 90%
-        
+
         vm.prank(admin);
-        vm.expectRevert("Shares must sum to 10000");
+        vm.expectRevert(IRevenueDistributor.InvalidSharesSum.selector);
         distributor.configureSplit(1, recipients, shares);
     }
     
@@ -103,14 +104,14 @@ contract RevenueDistributorTest is Test {
         address[] memory recipients = new address[](2);
         recipients[0] = recipient1;
         recipients[1] = recipient2;
-        
+
         uint256[] memory shares = new uint256[](3);
         shares[0] = 5000;
         shares[1] = 3000;
         shares[2] = 2000;
-        
+
         vm.prank(admin);
-        vm.expectRevert("Array length mismatch");
+        vm.expectRevert(IRevenueDistributor.ArrayLengthMismatch.selector);
         distributor.configureSplit(1, recipients, shares);
     }
     
@@ -470,6 +471,113 @@ contract RevenueDistributorTest is Test {
         vm.deal(address(this), 1 ether);
         vm.expectRevert("No split configured");
         distributor.distributePayment{value: 1 ether}(999, 1 ether);
+    }
+
+    function testGrantConfiguratorRoleToIPAssetContract() public {
+        address ipAssetContract = address(0x999);
+
+        // Admin grants CONFIGURATOR_ROLE to IPAsset contract
+        vm.startPrank(admin);
+        distributor.grantConfiguratorRole(ipAssetContract);
+        vm.stopPrank();
+
+        // Verify IPAsset contract has the role
+        assertTrue(distributor.hasRole(distributor.CONFIGURATOR_ROLE(), ipAssetContract));
+
+        // IPAsset contract can now configure splits
+        address[] memory recipients = new address[](1);
+        recipients[0] = recipient1;
+
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.startPrank(ipAssetContract);
+        distributor.configureSplit(1, recipients, shares);
+        vm.stopPrank();
+
+        // Verify split was configured
+        (address[] memory storedRecipients,) = distributor.ipSplits(1);
+        assertEq(storedRecipients.length, 1);
+        assertEq(storedRecipients[0], recipient1);
+    }
+
+    function testOnlyAdminCanGrantConfiguratorRole() public {
+        address ipAssetContract = address(0x999);
+
+        // Non-admin cannot grant role
+        vm.startPrank(recipient1);
+        vm.expectRevert();
+        distributor.grantConfiguratorRole(ipAssetContract);
+        vm.stopPrank();
+    }
+
+    function testCannotGrantConfiguratorRoleToZeroAddress() public {
+        vm.startPrank(admin);
+        vm.expectRevert(IRevenueDistributor.InvalidRecipient.selector);
+        distributor.grantConfiguratorRole(address(0));
+        vm.stopPrank();
+    }
+
+    function testRevenueDistributionAfterOwnershipChange() public {
+        // Setup: Create dedicated test addresses for old and new owners
+        address oldOwner = address(0x100);
+        address newOwner = address(0x200);
+
+        // Step 1: Admin grants CONFIGURATOR_ROLE to old owner
+        vm.startPrank(admin);
+        distributor.grantRole(distributor.CONFIGURATOR_ROLE(), oldOwner);
+        vm.stopPrank();
+
+        // Step 2: Old owner configures initial split
+        address[] memory oldRecipients = new address[](2);
+        oldRecipients[0] = recipient1;
+        oldRecipients[1] = recipient2;
+
+        uint256[] memory oldShares = new uint256[](2);
+        oldShares[0] = 7000; // 70%
+        oldShares[1] = 3000; // 30%
+
+        vm.startPrank(oldOwner);
+        distributor.configureSplit(1, oldRecipients, oldShares);
+        vm.stopPrank();
+
+        // Step 3: Verify old split is configured correctly
+        (address[] memory storedRecipients, uint256[] memory storedShares) = distributor.ipSplits(1);
+        assertEq(storedRecipients.length, 2);
+        assertEq(storedRecipients[0], recipient1);
+        assertEq(storedRecipients[1], recipient2);
+        assertEq(storedShares[0], 7000);
+        assertEq(storedShares[1], 3000);
+
+        // Step 4: Simulate ownership change - Admin grants CONFIGURATOR_ROLE to new owner
+        vm.startPrank(admin);
+        distributor.grantRole(distributor.CONFIGURATOR_ROLE(), newOwner);
+        vm.stopPrank();
+
+        // Step 5: Verify old split remains active after ownership change (AC: 7)
+        (address[] memory storedRecipientsAfter, uint256[] memory storedSharesAfter) = distributor.ipSplits(1);
+        assertEq(storedRecipientsAfter.length, 2);
+        assertEq(storedRecipientsAfter[0], recipient1); // Old recipients still configured
+        assertEq(storedSharesAfter[0], 7000);
+
+        // Step 6: New owner can reconfigure split
+        address[] memory newRecipients = new address[](1);
+        newRecipients[0] = recipient3;
+
+        uint256[] memory newShares = new uint256[](1);
+        newShares[0] = 10000; // 100%
+
+        vm.startPrank(newOwner);
+        vm.expectEmit(true, false, false, true);
+        emit SplitConfigured(1, newRecipients, newShares);
+        distributor.configureSplit(1, newRecipients, newShares);
+        vm.stopPrank();
+
+        // Step 7: Verify new split is now active
+        (address[] memory finalRecipients, uint256[] memory finalShares) = distributor.ipSplits(1);
+        assertEq(finalRecipients.length, 1);
+        assertEq(finalRecipients[0], recipient3);
+        assertEq(finalShares[0], 10000);
     }
 }
 

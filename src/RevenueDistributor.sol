@@ -39,7 +39,17 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         uint256 ipAssetId,
         address[] memory recipients,
         uint256[] memory shares
-    ) external {
+    ) external onlyRole(CONFIGURATOR_ROLE) {
+        if (recipients.length != shares.length) revert ArrayLengthMismatch();
+        if (recipients.length == 0) revert NoRecipientsProvided();
+
+        uint256 totalShares = 0;
+        for (uint256 i = 0; i < shares.length; i++) {
+            if (recipients[i] == address(0)) revert InvalidRecipient();
+            totalShares += shares[i];
+        }
+        if (totalShares != 10000) revert InvalidSharesSum();
+
         _ipSplits[ipAssetId] = Split({
             recipients: recipients,
             shares: shares
@@ -73,6 +83,11 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
 
     function setDefaultRoyalty(uint256 basisPoints) external {
         defaultRoyaltyBasisPoints = basisPoints;
+    }
+
+    function grantConfiguratorRole(address ipAssetContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (ipAssetContract == address(0)) revert InvalidRecipient();
+        _grantRole(CONFIGURATOR_ROLE, ipAssetContract);
     }
 
     function ipSplits(uint256 ipAssetId) external view returns (

@@ -19,6 +19,20 @@ interface IRevenueDistributor {
         uint256[] shares;
     }
 
+    // ==================== ERRORS ====================
+
+    /// @notice Thrown when array lengths don't match
+    error ArrayLengthMismatch();
+
+    /// @notice Thrown when no recipients are provided
+    error NoRecipientsProvided();
+
+    /// @notice Thrown when a recipient address is zero
+    error InvalidRecipient();
+
+    /// @notice Thrown when shares don't sum to 10000 basis points
+    error InvalidSharesSum();
+
     // ==================== EVENTS ====================
 
     /**
@@ -102,6 +116,13 @@ interface IRevenueDistributor {
      * @param basisPoints Royalty rate in basis points
      */
     function setDefaultRoyalty(uint256 basisPoints) external;
+
+    /**
+     * @notice Grants CONFIGURATOR_ROLE to the IPAsset contract
+     * @dev Only callable by admin. Should be called after IPAsset deployment.
+     * @param ipAssetContract Address of the IPAsset contract
+     */
+    function grantConfiguratorRole(address ipAssetContract) external;
 
     /**
      * @notice Gets the configured split for an IP asset
