@@ -36,7 +36,7 @@ contract RevenueDistributorTest is Test {
 
     event PaymentDistributed(uint256 indexed ipAssetId, uint256 amount, uint256 platformFee);
     event SplitConfigured(uint256 indexed ipAssetId, address[] recipients, uint256[] shares);
-    event Withdrawal(address indexed recipient, uint256 principal, uint256 penalty, uint256 total);
+    event Withdrawal(address indexed recipient, uint256 principal);
     event PenaltyAccrued(address indexed recipient, uint256 amount, uint256 monthsDelayed);
     
     function setUp() public {
@@ -238,7 +238,7 @@ contract RevenueDistributorTest is Test {
         
         // recipient2 tries to withdraw (has no balance)
         vm.prank(recipient2);
-        vm.expectRevert("No balance to withdraw");
+        vm.expectRevert(IRevenueDistributor.NoBalanceToWithdraw.selector);
         distributor.withdraw();
     }
     
@@ -265,7 +265,7 @@ contract RevenueDistributorTest is Test {
         
         // Second withdrawal fails (no balance left)
         vm.prank(recipient1);
-        vm.expectRevert("No balance to withdraw");
+        vm.expectRevert(IRevenueDistributor.NoBalanceToWithdraw.selector);
         distributor.withdraw();
     }
     
@@ -453,7 +453,7 @@ contract RevenueDistributorTest is Test {
         
         vm.prank(recipient1);
         vm.expectEmit(true, false, false, false);
-        emit Withdrawal(recipient1, 0, 0, 0); // Actual values calculated
+        emit Withdrawal(recipient1, 0); // Actual values calculated
         distributor.withdraw();
     }
     

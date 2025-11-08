@@ -101,8 +101,20 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         emit PaymentDistributed(ipAssetId, amount, platformFee);
     }
 
-    function withdraw() external {
-        emit Withdrawal(msg.sender, 0, 0, 0);
+    function withdraw() external nonReentrant {
+        uint256 balance = _balances[msg.sender].principal;
+        if (balance == 0) revert NoBalanceToWithdraw();
+
+        delete _balances[msg.sender];
+
+        (bool success,) = msg.sender.call{value: balance}("");
+        if (!success) revert TransferFailed();
+
+        emit Withdrawal(msg.sender, balance);
+    }
+
+    function getBalance(address recipient) external view returns (uint256 balance) {
+        return _balances[recipient].principal;
     }
 
     function getBalanceWithPenalty(address recipient) external view returns (

@@ -49,6 +49,12 @@ interface IRevenueDistributor {
     /// @notice Thrown when IP asset does not exist
     error InvalidIPAsset();
 
+    /// @notice Thrown when attempting to withdraw with zero balance
+    error NoBalanceToWithdraw();
+
+    /// @notice Thrown when ETH transfer fails during withdrawal
+    error TransferFailed();
+
     // ==================== EVENTS ====================
 
     /**
@@ -71,10 +77,8 @@ interface IRevenueDistributor {
      * @notice Emitted when a recipient withdraws funds
      * @param recipient Address withdrawing
      * @param principal Principal amount withdrawn
-     * @param penalty Penalty amount withdrawn (for RECURRENT payments)
-     * @param total Total amount withdrawn
      */
-    event Withdrawal(address indexed recipient, uint256 principal, uint256 penalty, uint256 total);
+    event Withdrawal(address indexed recipient, uint256 principal);
 
     /**
      * @notice Emitted when penalty accrues for late payment (RECURRENT payments only)
@@ -112,6 +116,13 @@ interface IRevenueDistributor {
      * @dev Calculates penalty for late recurring payments based on time delayed
      */
     function withdraw() external;
+
+    /**
+     * @notice Gets the principal balance for a recipient
+     * @param recipient Address to query
+     * @return balance Principal amount available for withdrawal
+     */
+    function getBalance(address recipient) external view returns (uint256 balance);
 
     /**
      * @notice Gets balance with accrued penalty for a recipient (RECURRENT payments)
