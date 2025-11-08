@@ -2,17 +2,21 @@
 pragma solidity ^0.8.28;
 
 import "./interfaces/IRevenueDistributor.sol";
+import "./interfaces/IIPAsset.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/interfaces/IERC2981.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessControl, IERC2981 {
     // State variables
     address public platformTreasury;
     uint256 public platformFeeBasisPoints;
     uint256 public defaultRoyaltyBasisPoints;
+    address public ipAssetContract;
 
     mapping(uint256 => Split) private _ipSplits;
+    mapping(address => Balance) private _balances;
 
     /// @notice Role for configuring revenue splits
     bytes32 public constant CONFIGURATOR_ROLE = keccak256("CONFIGURATOR_ROLE");
@@ -23,16 +27,20 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
     constructor(
         address _treasury,
         uint256 _platformFeeBasisPoints,
-        uint256 _defaultRoyaltyBasisPoints
+        uint256 _defaultRoyaltyBasisPoints,
+        address _ipAssetContract
     ) {
         require(_treasury != address(0), "Invalid treasury address");
         require(_platformFeeBasisPoints <= 10000, "Invalid platform fee");
         require(_defaultRoyaltyBasisPoints <= 10000, "Invalid royalty");
+        require(_ipAssetContract != address(0), "Invalid IPAsset address");
 
         platformTreasury = _treasury;
         platformFeeBasisPoints = _platformFeeBasisPoints;
         defaultRoyaltyBasisPoints = _defaultRoyaltyBasisPoints;
+        ipAssetContract = _ipAssetContract;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(CONFIGURATOR_ROLE, ipAssetContract);
     }
 
     function configureSplit(
@@ -57,8 +65,39 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         emit SplitConfigured(ipAssetId, recipients, shares);
     }
 
-    function distributePayment(uint256 ipAssetId, uint256 amount) external payable {
+    function distributePayment(uint256 ipAssetId, uint256 amount) external payable nonReentrant {
+        if (msg.value != amount) revert IncorrectPaymentAmount();
+
+        // Get IP asset owner using ownerOf from ERC721
+        address owner = IERC721(ipAssetContract).ownerOf(ipAssetId);
+        if (owner == address(0)) revert InvalidIPAsset();
+
+        // Platform fee deduction (BR-004.2)
         uint256 platformFee = (amount * platformFeeBasisPoints) / BASIS_POINTS;
+        if (platformFee > 0) {
+            // Use low-level call to prevent revert on treasury failure (BR-004.6)
+            (bool success,) = platformTreasury.call{value: platformFee}("");
+            // Don't revert if treasury transfer fails - continue distribution
+        }
+
+        uint256 remaining = amount - platformFee;
+
+        Split storage split = _ipSplits[ipAssetId];
+
+        // Check if split is configured
+        if (split.recipients.length > 0) {
+            // Split configured: distribute to recipients per shares
+            for (uint256 i = 0; i < split.recipients.length; i++) {
+                uint256 share = (remaining * split.shares[i]) / BASIS_POINTS;
+                _balances[split.recipients[i]].principal += share;
+                _balances[split.recipients[i]].timestamp = block.timestamp;
+            }
+        } else {
+            // NO split configured: send entire amount to IP asset owner
+            _balances[owner].principal += remaining;
+            _balances[owner].timestamp = block.timestamp;
+        }
+
         emit PaymentDistributed(ipAssetId, amount, platformFee);
     }
 
@@ -66,12 +105,16 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         emit Withdrawal(msg.sender, 0, 0, 0);
     }
 
-    function getBalanceWithInterest(address recipient) external view returns (
+    function getBalanceWithPenalty(address recipient) external view returns (
         uint256 principal,
-        uint256 interest,
+        uint256 penalty,
         uint256 total
     ) {
-        return (0, 0, 0);
+        Balance memory balance = _balances[recipient];
+        principal = balance.principal;
+        // Penalty calculation will be implemented in Story 2.5 (for RECURRENT payments)
+        penalty = 0;
+        total = principal + penalty;
     }
 
     function royaltyInfo(uint256 tokenId, uint256 salePrice) external view override returns (
@@ -85,9 +128,9 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         defaultRoyaltyBasisPoints = basisPoints;
     }
 
-    function grantConfiguratorRole(address ipAssetContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (ipAssetContract == address(0)) revert InvalidRecipient();
-        _grantRole(CONFIGURATOR_ROLE, ipAssetContract);
+    function grantConfiguratorRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert InvalidRecipient();
+        _grantRole(CONFIGURATOR_ROLE, account);
     }
 
     function ipSplits(uint256 ipAssetId) external view returns (

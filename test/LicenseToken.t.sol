@@ -41,9 +41,7 @@ contract LicenseTokenTest is Test {
         IPAsset ipAssetImpl = new IPAsset();
         LicenseToken licenseTokenImpl = new LicenseToken();
         GovernanceArbitrator arbitratorImpl = new GovernanceArbitrator();
-        
-        revenueDistributor = new RevenueDistributor(treasury, 250, 1000);
-        
+
         // Deploy proxies
         bytes memory ipAssetInitData = abi.encodeWithSelector(
             IPAsset.initialize.selector,
@@ -55,6 +53,8 @@ contract LicenseTokenTest is Test {
         );
         ERC1967Proxy ipAssetProxy = new ERC1967Proxy(address(ipAssetImpl), ipAssetInitData);
         ipAsset = IPAsset(address(ipAssetProxy));
+
+        revenueDistributor = new RevenueDistributor(treasury, 250, 1000, address(ipAsset));
         
         bytes memory licenseTokenInitData = abi.encodeWithSelector(
             LicenseToken.initialize.selector,

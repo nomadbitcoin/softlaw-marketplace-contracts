@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 /**
  * @title IRevenueDistributor
- * @notice Interface for revenue distribution with interest accrual
+ * @notice Interface for revenue distribution with penalty calculation for late recurring payments
  * @dev Non-upgradeable contract implementing EIP-2981 royalty standard
  */
 interface IRevenueDistributor {
@@ -19,6 +19,16 @@ interface IRevenueDistributor {
         uint256[] shares;
     }
 
+    /**
+     * @dev Balance tracking for recipient withdrawals
+     * @param principal Principal amount available for withdrawal
+     * @param timestamp Last update timestamp for penalty calculation (RECURRENT payments only)
+     */
+    struct Balance {
+        uint256 principal;
+        uint256 timestamp;
+    }
+
     // ==================== ERRORS ====================
 
     /// @notice Thrown when array lengths don't match
@@ -32,6 +42,12 @@ interface IRevenueDistributor {
 
     /// @notice Thrown when shares don't sum to 10000 basis points
     error InvalidSharesSum();
+
+    /// @notice Thrown when msg.value doesn't match amount parameter
+    error IncorrectPaymentAmount();
+
+    /// @notice Thrown when IP asset does not exist
+    error InvalidIPAsset();
 
     // ==================== EVENTS ====================
 
@@ -55,18 +71,18 @@ interface IRevenueDistributor {
      * @notice Emitted when a recipient withdraws funds
      * @param recipient Address withdrawing
      * @param principal Principal amount withdrawn
-     * @param interest Interest amount withdrawn
+     * @param penalty Penalty amount withdrawn (for RECURRENT payments)
      * @param total Total amount withdrawn
      */
-    event Withdrawal(address indexed recipient, uint256 principal, uint256 interest, uint256 total);
+    event Withdrawal(address indexed recipient, uint256 principal, uint256 penalty, uint256 total);
 
     /**
-     * @notice Emitted when interest accrues for a recipient
-     * @param recipient Address accruing interest
-     * @param amount Interest amount accrued
-     * @param monthsDelayed Number of months funds were held
+     * @notice Emitted when penalty accrues for late payment (RECURRENT payments only)
+     * @param recipient Address accruing penalty
+     * @param amount Penalty amount accrued
+     * @param monthsDelayed Number of months payment was delayed
      */
-    event InterestAccrued(address indexed recipient, uint256 amount, uint256 monthsDelayed);
+    event PenaltyAccrued(address indexed recipient, uint256 amount, uint256 monthsDelayed);
 
     // ==================== FUNCTIONS ====================
 
@@ -92,21 +108,21 @@ interface IRevenueDistributor {
     function distributePayment(uint256 ipAssetId, uint256 amount) external payable;
 
     /**
-     * @notice Withdraws accumulated funds with interest
-     * @dev Calculates interest based on time funds were held
+     * @notice Withdraws accumulated funds with penalty (if applicable)
+     * @dev Calculates penalty for late recurring payments based on time delayed
      */
     function withdraw() external;
 
     /**
-     * @notice Gets balance with accrued interest for a recipient
+     * @notice Gets balance with accrued penalty for a recipient (RECURRENT payments)
      * @param recipient Address to query
      * @return principal Principal amount available
-     * @return interest Interest accrued
+     * @return penalty Penalty accrued for late recurring payments
      * @return total Total amount available for withdrawal
      */
-    function getBalanceWithInterest(address recipient) external view returns (
+    function getBalanceWithPenalty(address recipient) external view returns (
         uint256 principal,
-        uint256 interest,
+        uint256 penalty,
         uint256 total
     );
 

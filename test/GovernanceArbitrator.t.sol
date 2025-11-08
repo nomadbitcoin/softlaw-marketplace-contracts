@@ -49,10 +49,8 @@ contract GovernanceArbitratorTest is Test {
         IPAsset ipAssetImpl = new IPAsset();
         LicenseToken licenseTokenImpl = new LicenseToken();
         GovernanceArbitrator arbitratorImpl = new GovernanceArbitrator();
-        
-        revenueDistributor = new RevenueDistributor(treasury, 250, 1000);
-        
-        // Deploy proxies
+
+        // Deploy proxies (need to deploy IPAsset proxy first to get address for RevenueDistributor)
         bytes memory ipAssetInitData = abi.encodeWithSelector(
             IPAsset.initialize.selector,
             "IP Asset",
@@ -63,7 +61,10 @@ contract GovernanceArbitratorTest is Test {
         );
         ERC1967Proxy ipAssetProxy = new ERC1967Proxy(address(ipAssetImpl), ipAssetInitData);
         ipAsset = IPAsset(address(ipAssetProxy));
-        
+
+        // Deploy RevenueDistributor with IPAsset address
+        revenueDistributor = new RevenueDistributor(treasury, 250, 1000, address(ipAsset));
+
         bytes memory licenseTokenInitData = abi.encodeWithSelector(
             LicenseToken.initialize.selector,
             "https://license.uri/",
@@ -74,7 +75,7 @@ contract GovernanceArbitratorTest is Test {
         );
         ERC1967Proxy licenseTokenProxy = new ERC1967Proxy(address(licenseTokenImpl), licenseTokenInitData);
         licenseToken = LicenseToken(address(licenseTokenProxy));
-        
+
         bytes memory arbitratorInitData = abi.encodeWithSelector(
             GovernanceArbitrator.initialize.selector,
             admin,

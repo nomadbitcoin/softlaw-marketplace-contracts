@@ -5,63 +5,91 @@ import "forge-std/Test.sol";
 import "../src/RevenueDistributor.sol";
 import "../src/interfaces/IRevenueDistributor.sol";
 
+contract MockIPAsset {
+    mapping(uint256 => address) private _owners;
+
+    function setOwner(uint256 tokenId, address owner) external {
+        _owners[tokenId] = owner;
+    }
+
+    function ownerOf(uint256 tokenId) external view returns (address) {
+        address owner = _owners[tokenId];
+        require(owner != address(0), "ERC721: invalid token ID");
+        return owner;
+    }
+}
+
 contract RevenueDistributorTest is Test {
     RevenueDistributor public distributor;
-    
+    MockIPAsset public mockIPAsset;
+
     address public admin = address(1);
     address public treasury = address(2);
     address public recipient1 = address(3);
     address public recipient2 = address(4);
     address public recipient3 = address(5);
+    address public ipOwner = address(6);
     
     uint256 constant PLATFORM_FEE = 250; // 2.5%
     uint256 constant DEFAULT_ROYALTY = 1000; // 10%
-    uint256 constant INTEREST_RATE = 500; // 5% monthly
-    
+    uint256 constant PENALTY_RATE = 500; // 5% monthly penalty for late payments
+
     event PaymentDistributed(uint256 indexed ipAssetId, uint256 amount, uint256 platformFee);
     event SplitConfigured(uint256 indexed ipAssetId, address[] recipients, uint256[] shares);
-    event Withdrawal(address indexed recipient, uint256 principal, uint256 interest, uint256 total);
-    event InterestAccrued(address indexed recipient, uint256 amount, uint256 monthsDelayed);
+    event Withdrawal(address indexed recipient, uint256 principal, uint256 penalty, uint256 total);
+    event PenaltyAccrued(address indexed recipient, uint256 amount, uint256 monthsDelayed);
     
     function setUp() public {
         vm.startPrank(admin);
-        distributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY);
+        mockIPAsset = new MockIPAsset();
+        distributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY, address(mockIPAsset));
         distributor.grantRole(distributor.CONFIGURATOR_ROLE(), admin);
         vm.stopPrank();
+
+        // Set up a default IP asset owner
+        mockIPAsset.setOwner(1, ipOwner);
     }
 
     function testConstructorSetsVariables() public {
-        vm.prank(admin);
-        RevenueDistributor newDistributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY);
+        MockIPAsset newMockIPAsset = new MockIPAsset();
+        RevenueDistributor newDistributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY, address(newMockIPAsset));
 
         assertEq(newDistributor.platformTreasury(), treasury);
         assertEq(newDistributor.platformFeeBasisPoints(), PLATFORM_FEE);
         assertEq(newDistributor.defaultRoyaltyBasisPoints(), DEFAULT_ROYALTY);
+        assertEq(newDistributor.ipAssetContract(), address(newMockIPAsset));
     }
 
     function testConstructorGrantsAdminRole() public {
+        MockIPAsset newMockIPAsset = new MockIPAsset();
+
         vm.prank(admin);
-        RevenueDistributor newDistributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY);
+        RevenueDistributor newDistributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY, address(newMockIPAsset));
 
         assertTrue(newDistributor.hasRole(newDistributor.DEFAULT_ADMIN_ROLE(), admin));
     }
 
     function testConstructorRevertsWithInvalidTreasury() public {
-        vm.prank(admin);
+        MockIPAsset newMockIPAsset = new MockIPAsset();
         vm.expectRevert("Invalid treasury address");
-        new RevenueDistributor(address(0), PLATFORM_FEE, DEFAULT_ROYALTY);
+        new RevenueDistributor(address(0), PLATFORM_FEE, DEFAULT_ROYALTY, address(newMockIPAsset));
     }
 
     function testConstructorRevertsWithInvalidPlatformFee() public {
-        vm.prank(admin);
+        MockIPAsset newMockIPAsset = new MockIPAsset();
         vm.expectRevert("Invalid platform fee");
-        new RevenueDistributor(treasury, 10001, DEFAULT_ROYALTY);
+        new RevenueDistributor(treasury, 10001, DEFAULT_ROYALTY, address(newMockIPAsset));
     }
 
     function testConstructorRevertsWithInvalidRoyalty() public {
-        vm.prank(admin);
+        MockIPAsset newMockIPAsset = new MockIPAsset();
         vm.expectRevert("Invalid royalty");
-        new RevenueDistributor(treasury, PLATFORM_FEE, 10001);
+        new RevenueDistributor(treasury, PLATFORM_FEE, 10001, address(newMockIPAsset));
+    }
+
+    function testConstructorRevertsWithInvalidIPAssetAddress() public {
+        vm.expectRevert("Invalid IPAsset address");
+        new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY, address(0));
     }
 
     // ============ BR-004.1: Revenue splits MUST sum to exactly 100% ============
@@ -138,7 +166,7 @@ contract RevenueDistributorTest is Test {
         assertEq(treasury.balance, treasuryBalanceBefore + 0.025 ether);
         
         // Recipient gets 97.5% = 0.975 ether
-        (uint256 principal,,) = distributor.getBalanceWithInterest(recipient1);
+        (uint256 principal,,) = distributor.getBalanceWithPenalty(recipient1);
         assertEq(principal, 0.975 ether);
     }
     
@@ -263,13 +291,13 @@ contract RevenueDistributorTest is Test {
         distributor.distributePayment{value: 1 ether}(1, 1 ether);
 
         // recipient1 should still receive their share
-        (uint256 principal,,) = distributor.getBalanceWithInterest(recipient1);
+        (uint256 principal,,) = distributor.getBalanceWithPenalty(recipient1);
         assertGt(principal, 0);
     }
     
-    // ============ BR-004.7: A delay in payments generates interest ============
-    
-    function testDelayedPaymentGeneratesInterest() public {
+    // ============ BR-004.7: A delay in payments generates penalty (RECURRENT payments) ============
+
+    function testDelayedPaymentGeneratesPenalty() public {
         // Configure split
         address[] memory recipients = new address[](1);
         recipients[0] = recipient1;
@@ -287,15 +315,15 @@ contract RevenueDistributorTest is Test {
         // Fast forward 30 days (1 month)
         vm.warp(block.timestamp + 30 days);
         
-        (uint256 principal, uint256 interest, uint256 total) = distributor.getBalanceWithInterest(recipient1);
-        
-        assertGt(interest, 0);
-        assertEq(total, principal + interest);
+        (uint256 principal, uint256 penalty, uint256 total) = distributor.getBalanceWithPenalty(recipient1);
+
+        assertGt(penalty, 0);
+        assertEq(total, principal + penalty);
     }
     
-    // ============ BR-004.8: Interest calculations use fixed monthly rate of 5% ============
-    
-    function testInterestCalculationAt5PercentMonthly() public {
+    // ============ BR-004.8: Penalty calculations use fixed monthly rate of 5% (RECURRENT payments) ============
+
+    function testPenaltyCalculationAt5PercentMonthly() public {
         // Configure split
         address[] memory recipients = new address[](1);
         recipients[0] = recipient1;
@@ -310,19 +338,19 @@ contract RevenueDistributorTest is Test {
         vm.deal(address(this), 1 ether);
         distributor.distributePayment{value: 1 ether}(1, 1 ether);
         
-        (uint256 principal,,) = distributor.getBalanceWithInterest(recipient1);
+        (uint256 principal,,) = distributor.getBalanceWithPenalty(recipient1);
         
         // Fast forward 30 days (1 month)
         vm.warp(block.timestamp + 30 days);
         
-        (,uint256 interest,) = distributor.getBalanceWithInterest(recipient1);
-        
-        // Interest should be 5% of principal
-        uint256 expectedInterest = (principal * 500) / 10000; // 5%
-        assertEq(interest, expectedInterest);
+        (,uint256 penalty,) = distributor.getBalanceWithPenalty(recipient1);
+
+        // Penalty should be 5% of principal
+        uint256 expectedPenalty = (principal * 500) / 10000; // 5%
+        assertEq(penalty, expectedPenalty);
     }
     
-    function testInterestCompoundsMonthly() public {
+    function testPenaltyCompoundsMonthly() public {
         // Configure split
         address[] memory recipients = new address[](1);
         recipients[0] = recipient1;
@@ -337,44 +365,44 @@ contract RevenueDistributorTest is Test {
         vm.deal(address(this), 1 ether);
         distributor.distributePayment{value: 1 ether}(1, 1 ether);
         
-        (uint256 principal,,) = distributor.getBalanceWithInterest(recipient1);
+        (uint256 principal,,) = distributor.getBalanceWithPenalty(recipient1);
         
         // Fast forward 60 days (2 months)
         vm.warp(block.timestamp + 60 days);
         
-        (,uint256 interest2Months,) = distributor.getBalanceWithInterest(recipient1);
-        
-        // Calculate expected compound interest
+        (,uint256 penalty2Months,) = distributor.getBalanceWithPenalty(recipient1);
+
+        // Calculate expected compound penalty
         // Month 1: principal * 1.05
         // Month 2: (principal * 1.05) * 1.05 = principal * 1.1025
         uint256 expectedTotal = (principal * 11025) / 10000;
-        uint256 expectedInterest = expectedTotal - principal;
-        
-        assertEq(interest2Months, expectedInterest);
+        uint256 expectedPenalty = expectedTotal - principal;
+
+        assertEq(penalty2Months, expectedPenalty);
     }
     
-    function testInterestAccruedEvent() public {
+    function testPenaltyAccruedEvent() public {
         // Configure split
         address[] memory recipients = new address[](1);
         recipients[0] = recipient1;
-        
+
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
-        
+
         vm.prank(admin);
         distributor.configureSplit(1, recipients, shares);
-        
+
         // Distribute payment
         vm.deal(address(this), 1 ether);
         distributor.distributePayment{value: 1 ether}(1, 1 ether);
-        
+
         // Fast forward 30 days
         vm.warp(block.timestamp + 30 days);
-        
-        // Withdraw should emit interest event
+
+        // Withdraw should emit penalty event (for RECURRENT payments)
         vm.prank(recipient1);
         vm.expectEmit(true, false, false, false);
-        emit InterestAccrued(recipient1, 0, 1); // Will calculate actual amount
+        emit PenaltyAccrued(recipient1, 0, 1); // Will calculate actual amount
         distributor.withdraw();
     }
     
@@ -399,9 +427,9 @@ contract RevenueDistributorTest is Test {
         distributor.distributePayment{value: 10 ether}(1, 10 ether);
         
         // After platform fee (2.5%), remaining = 9.75 ether
-        (uint256 principal1,,) = distributor.getBalanceWithInterest(recipient1);
-        (uint256 principal2,,) = distributor.getBalanceWithInterest(recipient2);
-        (uint256 principal3,,) = distributor.getBalanceWithInterest(recipient3);
+        (uint256 principal1,,) = distributor.getBalanceWithPenalty(recipient1);
+        (uint256 principal2,,) = distributor.getBalanceWithPenalty(recipient2);
+        (uint256 principal3,,) = distributor.getBalanceWithPenalty(recipient3);
         
         assertEq(principal1, 4.875 ether); // 50% of 9.75
         assertEq(principal2, 2.925 ether); // 30% of 9.75
@@ -467,10 +495,37 @@ contract RevenueDistributorTest is Test {
         assertEq(storedRecipients.length, 2);
     }
     
-    function testDistributeToUnconfiguredIPAsset() public {
+    function testDistributeToOwnerWhenNoSplitConfigured() public {
+        // Setup: DO NOT configure split for IP asset
+        uint256 ipAssetId = 999;
+        address owner = address(0xABC);
+        mockIPAsset.setOwner(ipAssetId, owner);
+
+        uint256 treasuryBalanceBefore = treasury.balance;
+
+        // Action: Distribute 1 ether payment
         vm.deal(address(this), 1 ether);
-        vm.expectRevert("No split configured");
-        distributor.distributePayment{value: 1 ether}(999, 1 ether);
+        distributor.distributePayment{value: 1 ether}(ipAssetId, 1 ether);
+
+        // Assert: Platform fee deducted (2.5% = 0.025 ether)
+        assertEq(treasury.balance, treasuryBalanceBefore + 0.025 ether);
+
+        // Assert: After platform fee, entire remaining amount goes to IP asset owner
+        (uint256 principal,,) = distributor.getBalanceWithPenalty(owner);
+        assertEq(principal, 0.975 ether); // 1 ether - 2.5% fee
+    }
+
+    function testDistributeToInvalidIPAssetReverts() public {
+        // IP asset 888 doesn't exist (no owner set)
+        vm.deal(address(this), 1 ether);
+        vm.expectRevert("ERC721: invalid token ID");
+        distributor.distributePayment{value: 1 ether}(888, 1 ether);
+    }
+
+    function testDistributeWithIncorrectPaymentAmountReverts() public {
+        vm.deal(address(this), 1 ether);
+        vm.expectRevert(IRevenueDistributor.IncorrectPaymentAmount.selector);
+        distributor.distributePayment{value: 1 ether}(1, 0.5 ether); // msg.value != amount
     }
 
     function testGrantConfiguratorRoleToIPAssetContract() public {

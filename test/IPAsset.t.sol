@@ -43,10 +43,7 @@ contract IPAssetTest is Test {
         IPAsset ipAssetImpl = new IPAsset();
         LicenseToken licenseTokenImpl = new LicenseToken();
         GovernanceArbitrator arbitratorImpl = new GovernanceArbitrator();
-        
-        // Deploy RevenueDistributor (non-upgradeable)
-        revenueDistributor = new RevenueDistributor(treasury, 250, 1000); // 2.5% platform fee, 10% default royalty
-        
+
         // Deploy proxies
         bytes memory ipAssetInitData = abi.encodeWithSelector(
             IPAsset.initialize.selector,
@@ -58,6 +55,9 @@ contract IPAssetTest is Test {
         );
         ERC1967Proxy ipAssetProxy = new ERC1967Proxy(address(ipAssetImpl), ipAssetInitData);
         ipAsset = IPAsset(address(ipAssetProxy));
+
+        // Deploy RevenueDistributor with IPAsset address (non-upgradeable)
+        revenueDistributor = new RevenueDistributor(treasury, 250, 1000, address(ipAsset)); // 2.5% platform fee, 10% default royalty
         
         bytes memory licenseTokenInitData = abi.encodeWithSelector(
             LicenseToken.initialize.selector,

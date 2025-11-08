@@ -59,9 +59,7 @@ contract MarketplaceTest is Test {
         LicenseToken licenseTokenImpl = new LicenseToken();
         Marketplace marketplaceImpl = new Marketplace();
         GovernanceArbitrator arbitratorImpl = new GovernanceArbitrator();
-        
-        revenueDistributor = new RevenueDistributor(treasury, 250, 1000);
-        
+
         // Deploy proxies
         bytes memory ipAssetInitData = abi.encodeWithSelector(
             IPAsset.initialize.selector,
@@ -73,6 +71,8 @@ contract MarketplaceTest is Test {
         );
         ERC1967Proxy ipAssetProxy = new ERC1967Proxy(address(ipAssetImpl), ipAssetInitData);
         ipAsset = IPAsset(address(ipAssetProxy));
+
+        revenueDistributor = new RevenueDistributor(treasury, 250, 1000, address(ipAsset));
         
         bytes memory licenseTokenInitData = abi.encodeWithSelector(
             LicenseToken.initialize.selector,

@@ -33,9 +33,7 @@ contract IntegrationTest is Test {
         LicenseToken licenseTokenImpl = new LicenseToken();
         Marketplace marketplaceImpl = new Marketplace();
         GovernanceArbitrator arbitratorImpl = new GovernanceArbitrator();
-        
-        revenueDistributor = new RevenueDistributor(treasury, 250, 1000);
-        
+
         // Deploy proxies
         bytes memory ipAssetInitData = abi.encodeWithSelector(
             IPAsset.initialize.selector,
@@ -47,6 +45,9 @@ contract IntegrationTest is Test {
         );
         ERC1967Proxy ipAssetProxy = new ERC1967Proxy(address(ipAssetImpl), ipAssetInitData);
         ipAsset = IPAsset(address(ipAssetProxy));
+
+        // Deploy RevenueDistributor after IPAsset proxy
+        revenueDistributor = new RevenueDistributor(treasury, 250, 1000, address(ipAsset));
         
         bytes memory licenseTokenInitData = abi.encodeWithSelector(
             LicenseToken.initialize.selector,
@@ -183,19 +184,19 @@ contract IntegrationTest is Test {
         // 10 ether - 2.5% platform fee = 9.75 ether
         // Creator gets 60% = 5.85 ether
         // Collaborator gets 40% = 3.9 ether
-        (uint256 creatorPrincipal,,) = revenueDistributor.getBalanceWithInterest(creator);
-        (uint256 collaboratorPrincipal,,) = revenueDistributor.getBalanceWithInterest(collaborator);
+        (uint256 creatorPrincipal,,) = revenueDistributor.getBalanceWithPenalty(creator);
+        (uint256 collaboratorPrincipal,,) = revenueDistributor.getBalanceWithPenalty(collaborator);
         
         assertEq(creatorPrincipal, 5.85 ether);
         assertEq(collaboratorPrincipal, 3.9 ether);
         
-        // 5. Fast forward 30 days and check interest
+        // 5. Fast forward 30 days and check penalty (RECURRENT payments)
         vm.warp(block.timestamp + 30 days);
-        
-        (,uint256 creatorInterest,) = revenueDistributor.getBalanceWithInterest(creator);
-        assertGt(creatorInterest, 0);
-        
-        // 6. Withdraw with interest
+
+        (,uint256 creatorPenalty,) = revenueDistributor.getBalanceWithPenalty(creator);
+        assertGt(creatorPenalty, 0);
+
+        // 6. Withdraw with penalty
         uint256 creatorBalanceBefore = creator.balance;
         vm.prank(creator);
         revenueDistributor.withdraw();
