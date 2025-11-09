@@ -55,6 +55,21 @@ interface IRevenueDistributor {
     /// @notice Thrown when ETH transfer fails during withdrawal
     error TransferFailed();
 
+    /// @notice Thrown when treasury address is zero
+    error InvalidTreasuryAddress();
+
+    /// @notice Thrown when platform fee exceeds 100%
+    error InvalidPlatformFee();
+
+    /// @notice Thrown when royalty rate exceeds 100%
+    error InvalidRoyalty();
+
+    /// @notice Thrown when IPAsset contract address is zero
+    error InvalidIPAssetAddress();
+
+    /// @notice Thrown when basis points exceeds 10000 (100%)
+    error InvalidBasisPoints();
+
     // ==================== EVENTS ====================
 
     /**
@@ -87,6 +102,12 @@ interface IRevenueDistributor {
      * @param monthsDelayed Number of months payment was delayed
      */
     event PenaltyAccrued(address indexed recipient, uint256 amount, uint256 monthsDelayed);
+
+    /**
+     * @notice Emitted when default royalty rate is updated
+     * @param newRoyaltyBasisPoints New royalty rate in basis points
+     */
+    event RoyaltyUpdated(uint256 newRoyaltyBasisPoints);
 
     // ==================== FUNCTIONS ====================
 
@@ -161,4 +182,11 @@ interface IRevenueDistributor {
         address[] memory recipients,
         uint256[] memory shares
     );
+
+    /**
+     * @notice Checks if a split is configured for an IP asset
+     * @param ipAssetId The IP asset ID
+     * @return configured True if split exists, false otherwise
+     */
+    function isSplitConfigured(uint256 ipAssetId) external view returns (bool configured);
 }

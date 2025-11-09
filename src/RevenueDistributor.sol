@@ -30,10 +30,10 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         uint256 _defaultRoyaltyBasisPoints,
         address _ipAssetContract
     ) {
-        require(_treasury != address(0), "Invalid treasury address");
-        require(_platformFeeBasisPoints <= 10000, "Invalid platform fee");
-        require(_defaultRoyaltyBasisPoints <= 10000, "Invalid royalty");
-        require(_ipAssetContract != address(0), "Invalid IPAsset address");
+        if (_treasury == address(0)) revert InvalidTreasuryAddress();
+        if (_platformFeeBasisPoints > 10000) revert InvalidPlatformFee();
+        if (_defaultRoyaltyBasisPoints > 10000) revert InvalidRoyalty();
+        if (_ipAssetContract == address(0)) revert InvalidIPAssetAddress();
 
         platformTreasury = _treasury;
         platformFeeBasisPoints = _platformFeeBasisPoints;
@@ -136,8 +136,10 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         return (address(this), (salePrice * defaultRoyaltyBasisPoints) / BASIS_POINTS);
     }
 
-    function setDefaultRoyalty(uint256 basisPoints) external {
+    function setDefaultRoyalty(uint256 basisPoints) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (basisPoints > 10000) revert InvalidBasisPoints();
         defaultRoyaltyBasisPoints = basisPoints;
+        emit RoyaltyUpdated(basisPoints);
     }
 
     function grantConfiguratorRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -152,9 +154,11 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         return (_ipSplits[ipAssetId].recipients, _ipSplits[ipAssetId].shares);
     }
 
+    function isSplitConfigured(uint256 ipAssetId) external view returns (bool configured) {
+        return _ipSplits[ipAssetId].recipients.length > 0;
+    }
+
     function supportsInterface(bytes4 interfaceId) public view override(AccessControl, IERC165) returns (bool) {
         return interfaceId == type(IERC2981).interfaceId || super.supportsInterface(interfaceId);
     }
-
-    receive() external payable {}
 }

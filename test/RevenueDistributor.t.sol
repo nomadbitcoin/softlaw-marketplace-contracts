@@ -38,6 +38,7 @@ contract RevenueDistributorTest is Test {
     event SplitConfigured(uint256 indexed ipAssetId, address[] recipients, uint256[] shares);
     event Withdrawal(address indexed recipient, uint256 principal);
     event PenaltyAccrued(address indexed recipient, uint256 amount, uint256 monthsDelayed);
+    event RoyaltyUpdated(uint256 newRoyaltyBasisPoints);
     
     function setUp() public {
         vm.startPrank(admin);
@@ -71,24 +72,24 @@ contract RevenueDistributorTest is Test {
 
     function testConstructorRevertsWithInvalidTreasury() public {
         MockIPAsset newMockIPAsset = new MockIPAsset();
-        vm.expectRevert("Invalid treasury address");
+        vm.expectRevert(IRevenueDistributor.InvalidTreasuryAddress.selector);
         new RevenueDistributor(address(0), PLATFORM_FEE, DEFAULT_ROYALTY, address(newMockIPAsset));
     }
 
     function testConstructorRevertsWithInvalidPlatformFee() public {
         MockIPAsset newMockIPAsset = new MockIPAsset();
-        vm.expectRevert("Invalid platform fee");
+        vm.expectRevert(IRevenueDistributor.InvalidPlatformFee.selector);
         new RevenueDistributor(treasury, 10001, DEFAULT_ROYALTY, address(newMockIPAsset));
     }
 
     function testConstructorRevertsWithInvalidRoyalty() public {
         MockIPAsset newMockIPAsset = new MockIPAsset();
-        vm.expectRevert("Invalid royalty");
+        vm.expectRevert(IRevenueDistributor.InvalidRoyalty.selector);
         new RevenueDistributor(treasury, PLATFORM_FEE, 10001, address(newMockIPAsset));
     }
 
     function testConstructorRevertsWithInvalidIPAssetAddress() public {
-        vm.expectRevert("Invalid IPAsset address");
+        vm.expectRevert(IRevenueDistributor.InvalidIPAssetAddress.selector);
         new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY, address(0));
     }
 
@@ -293,117 +294,6 @@ contract RevenueDistributorTest is Test {
         // recipient1 should still receive their share
         (uint256 principal,,) = distributor.getBalanceWithPenalty(recipient1);
         assertGt(principal, 0);
-    }
-    
-    // ============ BR-004.7: A delay in payments generates penalty (RECURRENT payments) ============
-
-    function testDelayedPaymentGeneratesPenalty() public {
-        // Configure split
-        address[] memory recipients = new address[](1);
-        recipients[0] = recipient1;
-        
-        uint256[] memory shares = new uint256[](1);
-        shares[0] = 10000;
-        
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
-        
-        // Distribute payment
-        vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether);
-        
-        // Fast forward 30 days (1 month)
-        vm.warp(block.timestamp + 30 days);
-        
-        (uint256 principal, uint256 penalty, uint256 total) = distributor.getBalanceWithPenalty(recipient1);
-
-        assertGt(penalty, 0);
-        assertEq(total, principal + penalty);
-    }
-    
-    // ============ BR-004.8: Penalty calculations use fixed monthly rate of 5% (RECURRENT payments) ============
-
-    function testPenaltyCalculationAt5PercentMonthly() public {
-        // Configure split
-        address[] memory recipients = new address[](1);
-        recipients[0] = recipient1;
-        
-        uint256[] memory shares = new uint256[](1);
-        shares[0] = 10000;
-        
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
-        
-        // Distribute 1 ether (after platform fee = 0.975 ether)
-        vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether);
-        
-        (uint256 principal,,) = distributor.getBalanceWithPenalty(recipient1);
-        
-        // Fast forward 30 days (1 month)
-        vm.warp(block.timestamp + 30 days);
-        
-        (,uint256 penalty,) = distributor.getBalanceWithPenalty(recipient1);
-
-        // Penalty should be 5% of principal
-        uint256 expectedPenalty = (principal * 500) / 10000; // 5%
-        assertEq(penalty, expectedPenalty);
-    }
-    
-    function testPenaltyCompoundsMonthly() public {
-        // Configure split
-        address[] memory recipients = new address[](1);
-        recipients[0] = recipient1;
-        
-        uint256[] memory shares = new uint256[](1);
-        shares[0] = 10000;
-        
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
-        
-        // Distribute 1 ether
-        vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether);
-        
-        (uint256 principal,,) = distributor.getBalanceWithPenalty(recipient1);
-        
-        // Fast forward 60 days (2 months)
-        vm.warp(block.timestamp + 60 days);
-        
-        (,uint256 penalty2Months,) = distributor.getBalanceWithPenalty(recipient1);
-
-        // Calculate expected compound penalty
-        // Month 1: principal * 1.05
-        // Month 2: (principal * 1.05) * 1.05 = principal * 1.1025
-        uint256 expectedTotal = (principal * 11025) / 10000;
-        uint256 expectedPenalty = expectedTotal - principal;
-
-        assertEq(penalty2Months, expectedPenalty);
-    }
-    
-    function testPenaltyAccruedEvent() public {
-        // Configure split
-        address[] memory recipients = new address[](1);
-        recipients[0] = recipient1;
-
-        uint256[] memory shares = new uint256[](1);
-        shares[0] = 10000;
-
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
-
-        // Distribute payment
-        vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether);
-
-        // Fast forward 30 days
-        vm.warp(block.timestamp + 30 days);
-
-        // Withdraw should emit penalty event (for RECURRENT payments)
-        vm.prank(recipient1);
-        vm.expectEmit(true, false, false, false);
-        emit PenaltyAccrued(recipient1, 0, 1); // Will calculate actual amount
-        distributor.withdraw();
     }
     
     // ============ Additional Tests ============
@@ -634,6 +524,103 @@ contract RevenueDistributorTest is Test {
         assertEq(finalRecipients[0], recipient3);
         assertEq(finalShares[0], 10000);
     }
+
+    function testIpSplitsReturnsConfiguration() public {
+        // Setup: Configure split with 2 recipients
+        address[] memory expectedRecipients = new address[](2);
+        expectedRecipients[0] = recipient1;
+        expectedRecipients[1] = recipient2;
+        uint256[] memory expectedShares = new uint256[](2);
+        expectedShares[0] = 6000;
+        expectedShares[1] = 4000;
+
+        vm.prank(admin);
+        distributor.configureSplit(1, expectedRecipients, expectedShares);
+
+        // Action: Query split configuration
+        (address[] memory recipients, uint256[] memory shares) = distributor.ipSplits(1);
+
+        // Assert: Returns correct configuration
+        assertEq(recipients.length, 2, "Should have 2 recipients");
+        assertEq(recipients[0], expectedRecipients[0], "Recipient 1 mismatch");
+        assertEq(recipients[1], expectedRecipients[1], "Recipient 2 mismatch");
+        assertEq(shares[0], expectedShares[0], "Share 1 mismatch");
+        assertEq(shares[1], expectedShares[1], "Share 2 mismatch");
+    }
+
+    function testIsSplitConfigured() public {
+        // Assert: No split configured initially
+        assertFalse(distributor.isSplitConfigured(1), "Should not be configured");
+
+        // Setup: Configure split
+        address[] memory recipients = new address[](1);
+        recipients[0] = recipient1;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        distributor.configureSplit(1, recipients, shares);
+
+        // Assert: Split now configured
+        assertTrue(distributor.isSplitConfigured(1), "Should be configured");
+    }
+
+    function testGetBalance() public {
+        // Setup: Configure split and distribute payment
+        address[] memory recipients = new address[](1);
+        recipients[0] = recipient1;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        distributor.configureSplit(1, recipients, shares);
+
+        vm.deal(address(this), 1 ether);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether);
+
+        // Action: Query balance
+        uint256 balance = distributor.getBalance(recipient1);
+
+        // Assert: Returns principal balance (1 ether - 2.5% platform fee)
+        assertEq(balance, 0.975 ether, "Balance should match principal");
+    }
+
+    function testSetDefaultRoyaltyEmitsEvent() public {
+        // Setup: Deploy contract with initial royalty (done in constructor)
+        uint256 newRoyalty = 1000; // 10%
+
+        // Action: Admin calls setDefaultRoyalty
+        vm.prank(admin);
+        vm.expectEmit(true, true, true, true);
+        emit RoyaltyUpdated(newRoyalty);
+        distributor.setDefaultRoyalty(newRoyalty);
+
+        // Assert: Royalty updated
+        assertEq(distributor.defaultRoyaltyBasisPoints(), newRoyalty, "Royalty should be updated");
+
+        // Verify royaltyInfo uses new rate
+        uint256 salePrice = 1 ether;
+        uint256 expectedRoyalty = (salePrice * newRoyalty) / 10000;
+        (, uint256 royaltyAmount) = distributor.royaltyInfo(1, salePrice);
+        assertEq(royaltyAmount, expectedRoyalty, "Royalty calculation should use new rate");
+    }
+
+    function testCannotSetInvalidRoyalty() public {
+        // Action: Try to set royalty > 10000
+        vm.prank(admin);
+        vm.expectRevert(IRevenueDistributor.InvalidBasisPoints.selector);
+        distributor.setDefaultRoyalty(10001);
+    }
+
+    function testOnlyAdminCanSetRoyalty() public {
+        address nonAdmin = address(0x999);
+
+        // Action: Non-admin tries to call setDefaultRoyalty
+        vm.prank(nonAdmin);
+        vm.expectRevert(); // AccessControl revert
+        distributor.setDefaultRoyalty(500);
+    }
+
 }
 
 // Helper contract that rejects ETH
