@@ -3,8 +3,9 @@ pragma solidity ^0.8.28;
 
 /**
  * @title IRevenueDistributor
- * @notice Interface for revenue distribution with penalty calculation for late recurring payments
+ * @notice Interface for simple revenue distribution to configured recipients
  * @dev Non-upgradeable contract implementing EIP-2981 royalty standard
+ * @dev Pure distribution logic - payment timing and penalties handled by calling contracts (e.g., Marketplace)
  */
 interface IRevenueDistributor {
     // ==================== STRUCTS ====================
@@ -19,15 +20,6 @@ interface IRevenueDistributor {
         uint256[] shares;
     }
 
-    /**
-     * @dev Balance tracking for recipient withdrawals
-     * @param principal Principal amount available for withdrawal
-     * @param timestamp Last update timestamp for penalty calculation (RECURRENT payments only)
-     */
-    struct Balance {
-        uint256 principal;
-        uint256 timestamp;
-    }
 
     // ==================== ERRORS ====================
 
@@ -95,13 +87,6 @@ interface IRevenueDistributor {
      */
     event Withdrawal(address indexed recipient, uint256 principal);
 
-    /**
-     * @notice Emitted when penalty accrues for late payment (RECURRENT payments only)
-     * @param recipient Address accruing penalty
-     * @param amount Penalty amount accrued
-     * @param monthsDelayed Number of months payment was delayed
-     */
-    event PenaltyAccrued(address indexed recipient, uint256 amount, uint256 monthsDelayed);
 
     /**
      * @notice Emitted when default royalty rate is updated
@@ -133,8 +118,8 @@ interface IRevenueDistributor {
     function distributePayment(uint256 ipAssetId, uint256 amount) external payable;
 
     /**
-     * @notice Withdraws accumulated funds with penalty (if applicable)
-     * @dev Calculates penalty for late recurring payments based on time delayed
+     * @notice Withdraws accumulated funds
+     * @dev All recipients (including platform treasury) use this function to withdraw
      */
     function withdraw() external;
 
@@ -145,18 +130,6 @@ interface IRevenueDistributor {
      */
     function getBalance(address recipient) external view returns (uint256 balance);
 
-    /**
-     * @notice Gets balance with accrued penalty for a recipient (RECURRENT payments)
-     * @param recipient Address to query
-     * @return principal Principal amount available
-     * @return penalty Penalty accrued for late recurring payments
-     * @return total Total amount available for withdrawal
-     */
-    function getBalanceWithPenalty(address recipient) external view returns (
-        uint256 principal,
-        uint256 penalty,
-        uint256 total
-    );
 
     /**
      * @notice Sets the default royalty rate
