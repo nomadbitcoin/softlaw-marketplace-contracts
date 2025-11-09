@@ -16,7 +16,7 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
     address public ipAssetContract;
 
     mapping(uint256 => Split) private _ipSplits;
-    mapping(address => Balance) private _balances;
+    mapping(address => uint256) private _balances;
 
     /// @notice Role for configuring revenue splits
     bytes32 public constant CONFIGURATOR_ROLE = keccak256("CONFIGURATOR_ROLE");
@@ -75,34 +75,27 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         // Platform fee deduction (BR-004.2)
         uint256 platformFee = (amount * platformFeeBasisPoints) / BASIS_POINTS;
         if (platformFee > 0) {
-            // Use low-level call to prevent revert on treasury failure (BR-004.6)
-            (bool success,) = platformTreasury.call{value: platformFee}("");
-            // Don't revert if treasury transfer fails - continue distribution
+            _balances[platformTreasury] += platformFee;
         }
 
         uint256 remaining = amount - platformFee;
 
         Split storage split = _ipSplits[ipAssetId];
 
-        // Check if split is configured
         if (split.recipients.length > 0) {
-            // Split configured: distribute to recipients per shares
             for (uint256 i = 0; i < split.recipients.length; i++) {
                 uint256 share = (remaining * split.shares[i]) / BASIS_POINTS;
-                _balances[split.recipients[i]].principal += share;
-                _balances[split.recipients[i]].timestamp = block.timestamp;
+                _balances[split.recipients[i]] += share;
             }
         } else {
-            // NO split configured: send entire amount to IP asset owner
-            _balances[owner].principal += remaining;
-            _balances[owner].timestamp = block.timestamp;
+            _balances[owner] += remaining;
         }
 
         emit PaymentDistributed(ipAssetId, amount, platformFee);
     }
 
     function withdraw() external nonReentrant {
-        uint256 balance = _balances[msg.sender].principal;
+        uint256 balance = _balances[msg.sender];
         if (balance == 0) revert NoBalanceToWithdraw();
 
         delete _balances[msg.sender];
@@ -114,19 +107,7 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
     }
 
     function getBalance(address recipient) external view returns (uint256 balance) {
-        return _balances[recipient].principal;
-    }
-
-    function getBalanceWithPenalty(address recipient) external view returns (
-        uint256 principal,
-        uint256 penalty,
-        uint256 total
-    ) {
-        Balance memory balance = _balances[recipient];
-        principal = balance.principal;
-        // Penalty calculation will be implemented in Story 2.5 (for RECURRENT payments)
-        penalty = 0;
-        total = principal + penalty;
+        return _balances[recipient];
     }
 
     function royaltyInfo(uint256 tokenId, uint256 salePrice) external view override returns (

@@ -150,25 +150,24 @@ contract RevenueDistributorTest is Test {
         // Configure split
         address[] memory recipients = new address[](1);
         recipients[0] = recipient1;
-        
+
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000; // 100%
-        
+
         vm.prank(admin);
         distributor.configureSplit(1, recipients, shares);
-        
-        uint256 treasuryBalanceBefore = treasury.balance;
-        
+
         // Distribute 1 ether
         vm.deal(address(this), 1 ether);
         distributor.distributePayment{value: 1 ether}(1, 1 ether);
-        
-        // Platform fee = 1 ether * 2.5% = 0.025 ether
-        assertEq(treasury.balance, treasuryBalanceBefore + 0.025 ether);
-        
+
+        // Platform fee = 1 ether * 2.5% = 0.025 ether (accumulated in balance)
+        uint256 treasuryBalance = distributor.getBalance(treasury);
+        assertEq(treasuryBalance, 0.025 ether);
+
         // Recipient gets 97.5% = 0.975 ether
-        (uint256 principal,,) = distributor.getBalanceWithPenalty(recipient1);
-        assertEq(principal, 0.975 ether);
+        uint256 balance = distributor.getBalance(recipient1);
+        assertEq(balance, 0.975 ether);
     }
     
     // ============ BR-004.3: Royalties MUST be calculated on all secondary sales ============
@@ -292,8 +291,8 @@ contract RevenueDistributorTest is Test {
         distributor.distributePayment{value: 1 ether}(1, 1 ether);
 
         // recipient1 should still receive their share
-        (uint256 principal,,) = distributor.getBalanceWithPenalty(recipient1);
-        assertGt(principal, 0);
+        uint256 balance = distributor.getBalance(recipient1);
+        assertGt(balance, 0);
     }
     
     // ============ Additional Tests ============
@@ -317,13 +316,13 @@ contract RevenueDistributorTest is Test {
         distributor.distributePayment{value: 10 ether}(1, 10 ether);
         
         // After platform fee (2.5%), remaining = 9.75 ether
-        (uint256 principal1,,) = distributor.getBalanceWithPenalty(recipient1);
-        (uint256 principal2,,) = distributor.getBalanceWithPenalty(recipient2);
-        (uint256 principal3,,) = distributor.getBalanceWithPenalty(recipient3);
-        
-        assertEq(principal1, 4.875 ether); // 50% of 9.75
-        assertEq(principal2, 2.925 ether); // 30% of 9.75
-        assertEq(principal3, 1.95 ether);  // 20% of 9.75
+        uint256 balance1 = distributor.getBalance(recipient1);
+        uint256 balance2 = distributor.getBalance(recipient2);
+        uint256 balance3 = distributor.getBalance(recipient3);
+
+        assertEq(balance1, 4.875 ether); // 50% of 9.75
+        assertEq(balance2, 2.925 ether); // 30% of 9.75
+        assertEq(balance3, 1.95 ether);  // 20% of 9.75
     }
     
     function testWithdrawalEvent() public {
@@ -391,18 +390,17 @@ contract RevenueDistributorTest is Test {
         address owner = address(0xABC);
         mockIPAsset.setOwner(ipAssetId, owner);
 
-        uint256 treasuryBalanceBefore = treasury.balance;
-
         // Action: Distribute 1 ether payment
         vm.deal(address(this), 1 ether);
         distributor.distributePayment{value: 1 ether}(ipAssetId, 1 ether);
 
-        // Assert: Platform fee deducted (2.5% = 0.025 ether)
-        assertEq(treasury.balance, treasuryBalanceBefore + 0.025 ether);
+        // Assert: Platform fee accumulated (2.5% = 0.025 ether)
+        uint256 treasuryBalance = distributor.getBalance(treasury);
+        assertEq(treasuryBalance, 0.025 ether);
 
         // Assert: After platform fee, entire remaining amount goes to IP asset owner
-        (uint256 principal,,) = distributor.getBalanceWithPenalty(owner);
-        assertEq(principal, 0.975 ether); // 1 ether - 2.5% fee
+        uint256 balance = distributor.getBalance(owner);
+        assertEq(balance, 0.975 ether); // 1 ether - 2.5% fee
     }
 
     function testDistributeToInvalidIPAssetReverts() public {
@@ -619,6 +617,68 @@ contract RevenueDistributorTest is Test {
         vm.prank(nonAdmin);
         vm.expectRevert(); // AccessControl revert
         distributor.setDefaultRoyalty(500);
+    }
+
+    // ============ Platform Treasury Withdrawal Tests (Story 2.6) ============
+
+    function testPlatformTreasuryCanWithdraw() public {
+        // Setup: Configure split
+        address[] memory recipients = new address[](1);
+        recipients[0] = recipient1;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        distributor.configureSplit(1, recipients, shares);
+
+        // Action: Distribute 10 ether payment
+        vm.deal(address(this), 10 ether);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether);
+
+        // Assert: Platform fee accumulated (2.5% of 10 ether = 0.25 ether)
+        uint256 treasuryBalance = distributor.getBalance(treasury);
+        assertEq(treasuryBalance, 0.25 ether);
+
+        // Action: Treasury withdraws accumulated fees
+        uint256 treasuryEthBefore = treasury.balance;
+        vm.prank(treasury);
+        distributor.withdraw();
+
+        // Assert: Treasury received funds
+        assertEq(treasury.balance, treasuryEthBefore + 0.25 ether);
+
+        // Assert: Treasury balance in contract is now zero
+        assertEq(distributor.getBalance(treasury), 0);
+    }
+
+    function testPlatformTreasuryAccumulatesAcrossMultipleDistributions() public {
+        // Setup: Configure split
+        address[] memory recipients = new address[](1);
+        recipients[0] = recipient1;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        distributor.configureSplit(1, recipients, shares);
+
+        // Action: Distribute 3 payments
+        vm.deal(address(this), 30 ether);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether);
+
+        // Assert: Platform fees accumulated across all distributions
+        // 3 * (10 ether * 2.5%) = 0.75 ether
+        uint256 treasuryBalance = distributor.getBalance(treasury);
+        assertEq(treasuryBalance, 0.75 ether);
+
+        // Action: Treasury withdraws all accumulated fees
+        uint256 treasuryEthBefore = treasury.balance;
+        vm.prank(treasury);
+        distributor.withdraw();
+
+        // Assert: Treasury received all accumulated fees
+        assertEq(treasury.balance, treasuryEthBefore + 0.75 ether);
     }
 
 }
