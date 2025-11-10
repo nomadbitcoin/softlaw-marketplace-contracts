@@ -27,7 +27,7 @@ contract IPAssetTest is Test {
         uint256 indexed ipTokenId,
         uint256 indexed licenseId,
         address indexed licensee,
-        uint256 amount,
+        uint256 supply,
         bool isExclusive
     );
     event RevenueSplitConfigured(uint256 indexed tokenId, address[] recipients, uint256[] shares);
@@ -483,7 +483,7 @@ contract IPAssetTest is Test {
         uint256 licenseId = ipAsset.mintLicense(
             tokenId,
             licensee,
-            5, // amount
+            5, // supply
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,

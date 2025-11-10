@@ -42,14 +42,14 @@ interface IIPAsset {
      * @param ipTokenId The IP asset token ID this license is for
      * @param licenseId The ID of the newly registered license (0 in Phase 1 stub)
      * @param licensee The address receiving the license
-     * @param amount Number of license tokens minted (for semi-fungible licenses)
+     * @param supply Number of license tokens minted (ERC-1155 supply)
      * @param isExclusive Whether this is an exclusive license
      */
     event LicenseRegistered(
         uint256 indexed ipTokenId,
         uint256 indexed licenseId,
         address indexed licensee,
-        uint256 amount,
+        uint256 supply,
         bool isExclusive
     );
 
@@ -163,7 +163,7 @@ interface IIPAsset {
      *      Only the IP asset owner can mint licenses.
      * @param ipTokenId The IP asset to create a license for
      * @param licensee Address to receive the license
-     * @param amount Number of license tokens to mint (for semi-fungible licenses)
+     * @param supply Number of license tokens to mint (ERC-1155 supply)
      * @param publicMetadataURI Publicly visible license metadata URI
      * @param privateMetadataURI Private license terms URI (access controlled)
      * @param expiryTime Unix timestamp when license expires
@@ -175,7 +175,7 @@ interface IIPAsset {
     function mintLicense(
         uint256 ipTokenId,
         address licensee,
-        uint256 amount,
+        uint256 supply,
         string memory publicMetadataURI,
         string memory privateMetadataURI,
         uint256 expiryTime,

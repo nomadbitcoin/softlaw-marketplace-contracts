@@ -137,7 +137,8 @@ contract IntegrationTest is Test {
         assertEq(licenseToken.balanceOf(licensee, licenseId), 5);
         
         // 4. Verify license details
-        (uint256 linkedIpAssetId,,,,,, string memory publicURI, string memory privateURI) = 
+        // Struct: ipAssetId, supply, expiryTime, terms, isExclusive, isRevoked, publicMetadataURI, privateMetadataURI, paymentInterval
+        (uint256 linkedIpAssetId,,,,,, string memory publicURI, string memory privateURI,) =
             licenseToken.licenses(licenseId);
         assertEq(linkedIpAssetId, ipTokenId);
         assertEq(publicURI, "ipfs://public-terms");
@@ -257,7 +258,7 @@ contract IntegrationTest is Test {
         // 1. Setup: Create IP and license
         vm.prank(creator);
         uint256 ipTokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
         vm.prank(creator);
         uint256 licenseId = ipAsset.mintLicense(
             ipTokenId,
@@ -270,18 +271,15 @@ contract IntegrationTest is Test {
             "worldwide",
             false
         );
-        
-        // 2. Simulate 4 missed payments
-        vm.startPrank(address(licenseToken));
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        vm.stopPrank();
-        
-        // 3. Check triggers auto-revoke
+
+        // 2. NOTE: Missed payments are now calculated on-demand by Marketplace
+        //    based on: (block.timestamp - lastPaymentTime) / paymentInterval
+        //    This test will be updated when Marketplace contract is implemented
+        //    For now, checkAndRevokeForMissedPayments() will calculate internally
+
+        // 3. Check triggers auto-revoke (calculates missed payments on-demand)
         licenseToken.checkAndRevokeForMissedPayments(licenseId);
-        
+
         // 4. Verify license is revoked
         assertTrue(licenseToken.isRevoked(licenseId));
         

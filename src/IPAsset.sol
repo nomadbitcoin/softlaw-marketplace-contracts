@@ -65,7 +65,7 @@ contract IPAsset is
     function mintLicense(
         uint256 ipTokenId,
         address licensee,
-        uint256 amount,
+        uint256 supply,
         string memory publicMetadataURI,
         string memory privateMetadataURI,
         uint256 expiryTime,
@@ -81,7 +81,7 @@ contract IPAsset is
         // PHASE 2: LicenseToken will callback to updateActiveLicenseCount()
         activeLicenseCount[ipTokenId]++;
 
-        emit LicenseRegistered(ipTokenId, 0, licensee, amount, isExclusive);
+        emit LicenseRegistered(ipTokenId, 0, licensee, supply, isExclusive);
         return 0; // Placeholder - will return real ID in Phase 2
     }
 

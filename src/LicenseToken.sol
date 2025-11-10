@@ -2,22 +2,34 @@
 pragma solidity ^0.8.28;
 
 import "./interfaces/ILicenseToken.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract LicenseToken is ILicenseToken {
-    // State variables
-    uint256 private _licenseIdCounter;
+contract LicenseToken is
+    ILicenseToken,
+    Initializable,
+    ERC1155Upgradeable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable
+{
+    bytes32 public constant ARBITRATOR_ROLE = keccak256("ARBITRATOR_ROLE");
+    bytes32 public constant IP_ASSET_ROLE = keccak256("IP_ASSET_ROLE");
+    bytes32 public constant MARKETPLACE_ROLE = keccak256("MARKETPLACE_ROLE");
 
     mapping(uint256 => License) public licenses;
-    mapping(uint256 => PaymentSchedule) public paymentSchedules;
-    mapping(uint256 => bool) private _hasExclusiveLicense;
     mapping(uint256 => bool) private _isExpired;
-    mapping(uint256 => bool) private _isActive;
+    mapping(uint256 => bool) private _hasExclusiveLicense;
+    uint256 private _licenseIdCounter;
+    address public ipAssetContract;
 
-    /// @notice Role for arbitrator (dispute resolution)
-    bytes32 public constant ARBITRATOR_ROLE = keccak256("ARBITRATOR_ROLE");
-
-    /// @notice Role for IP asset contract
-    bytes32 public constant IP_ASSET_ROLE = keccak256("IP_ASSET_ROLE");
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(
         string memory baseURI,
@@ -25,117 +37,88 @@ contract LicenseToken is ILicenseToken {
         address ipAsset,
         address arbitrator,
         address revenueDistributor
-    ) external {}
+    ) external initializer {
+        __ERC1155_init(baseURI);
+        __AccessControl_init();
+        __Pausable_init();
+        __UUPSUpgradeable_init();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(ARBITRATOR_ROLE, arbitrator);
+        _grantRole(IP_ASSET_ROLE, ipAsset);
+
+        ipAssetContract = ipAsset;
+    }
 
     function mintLicense(
         address to,
         uint256 ipAssetId,
-        uint256 amount,
+        uint256 supply,
         string memory publicMetadataURI,
         string memory privateMetadataURI,
         uint256 expiryTime,
-        uint256 royaltyBasisPoints,
         string memory terms,
         bool isExclusive
     ) external returns (uint256) {
-        uint256 licenseId = _licenseIdCounter++;
-        licenses[licenseId] = License({
-            ipAssetId: ipAssetId,
-            expiryTime: expiryTime,
-            royaltyBasisPoints: royaltyBasisPoints,
-            terms: terms,
-            isExclusive: isExclusive,
-            isRevoked: false,
-            publicMetadataURI: publicMetadataURI,
-            privateMetadataURI: privateMetadataURI
-        });
-        emit LicenseCreated(licenseId, ipAssetId, to, isExclusive);
-        return licenseId;
+        return 0;
     }
 
-    function markExpired(uint256 licenseId) external {
-        _isExpired[licenseId] = true;
-        emit LicenseExpired(licenseId);
-    }
+    function markExpired(uint256 licenseId) external {}
 
-    function batchMarkExpired(uint256[] memory licenseIds) external {
-        for (uint256 i = 0; i < licenseIds.length; i++) {
-            _isExpired[licenseIds[i]] = true;
-            emit LicenseExpired(licenseIds[i]);
-        }
-    }
+    function batchMarkExpired(uint256[] memory licenseIds) external {}
 
-    function revokeLicense(uint256 licenseId, string memory reason) external {
-        licenses[licenseId].isRevoked = true;
-        emit LicenseRevoked(licenseId, reason);
-    }
+    function revokeLicense(uint256 licenseId, string memory reason) external {}
 
-    function recordPayment(uint256 licenseId) external {
-        paymentSchedules[licenseId].lastPaymentTime = block.timestamp;
-        paymentSchedules[licenseId].missedPayments = 0;
-        emit PaymentRecorded(licenseId, block.timestamp);
-    }
+    function recordPayment(uint256 licenseId) external {}
 
-    function recordMissedPayment(uint256 licenseId) external {
-        paymentSchedules[licenseId].missedPayments++;
-    }
-
-    function checkAndRevokeForMissedPayments(uint256 licenseId) external {
-        if (paymentSchedules[licenseId].missedPayments >= 3) {
-            licenses[licenseId].isRevoked = true;
-            emit AutoRevoked(licenseId, paymentSchedules[licenseId].missedPayments);
-        }
-    }
+    function checkAndRevokeForMissedPayments(uint256 licenseId) external {}
 
     function getPublicMetadata(uint256 licenseId) external view returns (string memory) {
-        return licenses[licenseId].publicMetadataURI;
+        return "";
     }
 
     function getPrivateMetadata(uint256 licenseId) external view returns (string memory) {
-        return licenses[licenseId].privateMetadataURI;
+        return "";
     }
 
-    function grantPrivateAccess(uint256 licenseId, address account) external {
-        emit PrivateAccessGranted(licenseId, account);
-    }
+    function grantPrivateAccess(uint256 licenseId, address account) external {}
 
     function isRevoked(uint256 licenseId) external view returns (bool) {
-        return licenses[licenseId].isRevoked;
+        return false;
     }
 
     function isExpired(uint256 licenseId) external view returns (bool) {
         return _isExpired[licenseId];
     }
 
-    function setArbitratorContract(address arbitrator) external {}
+    function setArbitratorContract(address arbitrator) external onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    function reactivateLicense(uint256 licenseId) external {
-        licenses[licenseId].isRevoked = false;
-        _isExpired[licenseId] = false;
+    function reactivateLicense(uint256 licenseId) external {}
+
+    function grantRole(bytes32 role, address account)
+        public
+        override(AccessControlUpgradeable, ILicenseToken)
+        onlyRole(getRoleAdmin(role))
+    {
+        super.grantRole(role, account);
     }
 
-    function grantRole(bytes32 role, address account) external {}
-
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == 0xd9b67a26 || // ERC1155
-               interfaceId == 0x7965db0b;   // AccessControl
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC1155Upgradeable, AccessControlUpgradeable, ILicenseToken)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
     }
 
-    function balanceOf(address account, uint256 id) external view returns (uint256) {
-        return 0;
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
     }
 
-    function totalSupply(uint256 id) external view returns (uint256) {
-        return 0;
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
     }
-
-    function safeTransferFrom(
-        address from,
-        address to,
-        uint256 id,
-        uint256 amount,
-        bytes memory data
-    ) external {}
-
-    function setApprovalForAll(address operator, bool approved) external {}
 }

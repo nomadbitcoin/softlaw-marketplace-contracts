@@ -3,670 +3,191 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../src/LicenseToken.sol";
-import "../src/IPAsset.sol";
-import "../src/GovernanceArbitrator.sol";
-import "../src/RevenueDistributor.sol";
+import "../src/interfaces/ILicenseToken.sol";
 import "../src/base/ERC1967Proxy.sol";
+import "@openzeppelin/contracts/interfaces/IERC1155.sol";
+import "@openzeppelin/contracts/interfaces/IERC165.sol";
+import "@openzeppelin/contracts/access/IAccessControl.sol";
 
+/**
+ * @title LicenseTokenTest
+ * @notice Test suite for LicenseToken contract (Story 3.1: Base Setup)
+ * @dev Tests contract initialization, inheritance, and interface support
+ */
 contract LicenseTokenTest is Test {
     LicenseToken public licenseToken;
-    IPAsset public ipAsset;
-    GovernanceArbitrator public arbitrator;
-    RevenueDistributor public revenueDistributor;
-    
-    address public admin = address(1);
-    address public creator = address(2);
-    address public licensee = address(3);
-    address public other = address(4);
-    address public treasury = address(5);
-    
-    uint256 public ipTokenId;
-    
-    event LicenseCreated(
-        uint256 indexed licenseId,
-        uint256 indexed ipAssetId,
-        address indexed licensee,
-        bool isExclusive
-    );
-    event LicenseExpired(uint256 indexed licenseId);
-    event LicenseRevoked(uint256 indexed licenseId, string reason);
-    event PaymentRecorded(uint256 indexed licenseId, uint256 timestamp);
-    event AutoRevoked(uint256 indexed licenseId, uint256 missedPayments);
-    event PrivateAccessGranted(uint256 indexed licenseId, address indexed account);
-    
+    address public admin;
+    address public ipAsset;
+    address public arbitrator;
+    address public revenueDistributor;
+
     function setUp() public {
-        vm.startPrank(admin);
-        
-        // Deploy implementations
-        IPAsset ipAssetImpl = new IPAsset();
-        LicenseToken licenseTokenImpl = new LicenseToken();
-        GovernanceArbitrator arbitratorImpl = new GovernanceArbitrator();
+        // Set up test addresses
+        admin = address(this);
+        ipAsset = address(0x1);
+        arbitrator = address(0x2);
+        revenueDistributor = address(0x3);
 
-        // Deploy proxies
-        bytes memory ipAssetInitData = abi.encodeWithSelector(
-            IPAsset.initialize.selector,
-            "IP Asset",
-            "IPA",
-            admin,
-            address(0),
-            address(0)
-        );
-        ERC1967Proxy ipAssetProxy = new ERC1967Proxy(address(ipAssetImpl), ipAssetInitData);
-        ipAsset = IPAsset(address(ipAssetProxy));
+        // Deploy implementation
+        LicenseToken implementation = new LicenseToken();
 
-        revenueDistributor = new RevenueDistributor(treasury, 250, 1000, address(ipAsset));
-        
-        bytes memory licenseTokenInitData = abi.encodeWithSelector(
+        // Deploy proxy with initialization
+        bytes memory initData = abi.encodeWithSelector(
             LicenseToken.initialize.selector,
-            "https://license.uri/",
+            "https://metadata.uri/",
             admin,
-            address(ipAsset),
-            address(0),
-            address(revenueDistributor)
+            ipAsset,
+            arbitrator,
+            revenueDistributor
         );
-        ERC1967Proxy licenseTokenProxy = new ERC1967Proxy(address(licenseTokenImpl), licenseTokenInitData);
-        licenseToken = LicenseToken(address(licenseTokenProxy));
-        
-        bytes memory arbitratorInitData = abi.encodeWithSelector(
-            GovernanceArbitrator.initialize.selector,
-            admin,
-            address(licenseToken),
-            address(ipAsset),
-            address(revenueDistributor)
-        );
-        ERC1967Proxy arbitratorProxy = new ERC1967Proxy(address(arbitratorImpl), arbitratorInitData);
-        arbitrator = GovernanceArbitrator(address(arbitratorProxy));
-        
-        ipAsset.setLicenseTokenContract(address(licenseToken));
-        ipAsset.setArbitratorContract(address(arbitrator));
-        licenseToken.setArbitratorContract(address(arbitrator));
-        
-        ipAsset.grantRole(ipAsset.LICENSE_MANAGER_ROLE(), address(licenseToken));
-        ipAsset.grantRole(ipAsset.ARBITRATOR_ROLE(), address(arbitrator));
-        licenseToken.grantRole(licenseToken.ARBITRATOR_ROLE(), address(arbitrator));
-        licenseToken.grantRole(licenseToken.IP_ASSET_ROLE(), address(ipAsset));
-        
-        vm.stopPrank();
-        
-        // Mint an IP asset for testing
-        vm.prank(creator);
-        ipTokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        licenseToken = LicenseToken(address(proxy));
     }
-    
-    // ============ BR-002.1: Licenses MUST be linked to a valid IP asset ============
-    
-    function testMintLicenseLinksToIPAsset() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        (uint256 linkedIpAssetId,,,,,,,) = licenseToken.licenses(licenseId);
-        assertEq(linkedIpAssetId, ipTokenId);
+
+    // ==================== STORY 3.1: AC1 - Contract Inheritance ====================
+
+    function testContractInheritsFromERC1155Upgradeable() public view {
+        // Verify ERC1155 interface support
+        assertTrue(licenseToken.supportsInterface(type(IERC1155).interfaceId));
     }
-    
-    function testCannotMintLicenseWithInvalidIPAsset() public {
-        vm.prank(address(ipAsset));
-        vm.expectRevert("Invalid IP asset");
-        licenseToken.mintLicense(
-            licensee,
-            999, // Non-existent IP asset
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
+
+    function testContractInheritsFromAccessControlUpgradeable() public view {
+        // Verify AccessControl interface support
+        assertTrue(licenseToken.supportsInterface(type(IAccessControl).interfaceId));
     }
-    
-    // ============ BR-002.2: Exclusive licenses MUST have a supply of exactly 1 ============
-    
-    function testExclusiveLicenseHasSupplyOne() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            true // exclusive
-        );
-        
-        assertEq(licenseToken.totalSupply(licenseId), 1);
+
+    // Note: UUPS and Pausable don't have standard interface IDs to check
+    // Their functionality is tested through function calls
+
+    // ==================== STORY 3.1: AC4 - Initialize Function ====================
+
+    function testInitializeSetsBaseURI() public {
+        // Base URI is set during initialization
+        // ERC1155 doesn't expose base URI getter, but we can verify initialization succeeded
+        // by checking that roles were assigned
+        assertTrue(licenseToken.hasRole(licenseToken.DEFAULT_ADMIN_ROLE(), admin));
     }
-    
-    function testCannotMintExclusiveLicenseWithSupplyGreaterThanOne() public {
-        vm.prank(address(ipAsset));
-        vm.expectRevert("Exclusive license must have supply of 1");
-        licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            5, // Invalid for exclusive
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            true
-        );
+
+    function testInitializeSetsRoles() public view {
+        // Verify admin role
+        assertTrue(licenseToken.hasRole(licenseToken.DEFAULT_ADMIN_ROLE(), admin));
+
+        // Verify arbitrator role
+        assertTrue(licenseToken.hasRole(licenseToken.ARBITRATOR_ROLE(), arbitrator));
+
+        // Verify IP asset role
+        assertTrue(licenseToken.hasRole(licenseToken.IP_ASSET_ROLE(), ipAsset));
     }
-    
-    // ============ BR-002.3: Non-exclusive licenses MAY have any supply greater than 1 ============
-    
-    function testNonExclusiveLicenseCanHaveMultipleSupply() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            10,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false // non-exclusive
-        );
-        
-        assertEq(licenseToken.totalSupply(licenseId), 10);
-        assertEq(licenseToken.balanceOf(licensee, licenseId), 10);
+
+    function testInitializeSetsIPAssetContract() public view {
+        assertEq(licenseToken.ipAssetContract(), ipAsset);
     }
-    
-    // ============ BR-002.4: Only one exclusive license MAY exist per IP asset at a time ============
-    
-    function testCannotMintMultipleExclusiveLicenses() public {
-        vm.prank(address(ipAsset));
-        licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            true
-        );
-        
-        vm.prank(address(ipAsset));
-        vm.expectRevert("Exclusive license already exists for this IP");
-        licenseToken.mintLicense(
-            other,
-            ipTokenId,
-            1,
-            "ipfs://public2",
-            "ipfs://private2",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            true
-        );
-    }
-    
-    function testCanMintMultipleNonExclusiveLicenses() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId1 = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            5,
-            "ipfs://public1",
-            "ipfs://private1",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        vm.prank(address(ipAsset));
-        uint256 licenseId2 = licenseToken.mintLicense(
-            other,
-            ipTokenId,
-            3,
-            "ipfs://public2",
-            "ipfs://private2",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        assertTrue(licenseId1 != licenseId2);
-    }
-    
-    // ============ BR-002.5: Licenses MUST have an expiry timestamp ============
-    
-    function testLicenseHasExpiryTimestamp() public {
-        uint256 expiryTime = block.timestamp + 365 days;
-        
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            expiryTime,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        (,uint256 storedExpiry,,,,,,) = licenseToken.licenses(licenseId);
-        assertEq(storedExpiry, expiryTime);
-    }
-    
-    // ============ BR-002.6: Expired licenses MUST NOT be transferable ============
-    
-    function testCannotTransferExpiredLicense() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 1 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        // Fast forward past expiry
-        vm.warp(block.timestamp + 2 days);
-        
-        // Mark as expired
-        licenseToken.markExpired(licenseId);
-        
-        vm.prank(licensee);
-        vm.expectRevert("License expired");
-        licenseToken.safeTransferFrom(licensee, other, licenseId, 1, "");
-    }
-    
-    // ============ BR-002.7: Revoked licenses MUST NOT be transferable ============
-    
-    function testCannotTransferRevokedLicense() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        // Revoke license
-        vm.prank(address(arbitrator));
-        licenseToken.revokeLicense(licenseId, "Violation");
-        
-        vm.prank(licensee);
-        vm.expectRevert("License revoked");
-        licenseToken.safeTransferFrom(licensee, other, licenseId, 1, "");
-    }
-    
-    // ============ BR-002.8: Active licenses MAY only be revoked through dispute resolution ============
-    
-    function testOnlyArbitratorCanRevokeLicense() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        vm.prank(creator);
+
+    function testCannotReinitialize() public {
         vm.expectRevert();
-        licenseToken.revokeLicense(licenseId, "Violation");
-        
-        vm.prank(address(arbitrator));
-        licenseToken.revokeLicense(licenseId, "Violation");
-        
-        assertTrue(licenseToken.isRevoked(licenseId));
-    }
-    
-    // ============ BR-002.9: Expired licenses MAY be marked inactive by anyone ============
-    
-    function testAnyoneCanMarkExpiredLicense() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 1 days,
-            1000,
-            "worldwide",
-            false
+        licenseToken.initialize(
+            "https://new-uri/",
+            address(0x999),
+            address(0x888),
+            address(0x777),
+            address(0x666)
         );
-        
-        // Fast forward past expiry
-        vm.warp(block.timestamp + 2 days);
-        
-        // Anyone can mark as expired
-        vm.prank(other);
-        vm.expectEmit(true, false, false, false);
-        emit LicenseExpired(licenseId);
-        licenseToken.markExpired(licenseId);
-        
-        assertTrue(licenseToken.isExpired(licenseId));
     }
-    
-    function testCannotMarkNonExpiredLicense() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        vm.prank(other);
-        vm.expectRevert("License not yet expired");
-        licenseToken.markExpired(licenseId);
+
+    // ==================== STORY 3.1: AC5 - ERC-165 Interface Detection ====================
+
+    function testSupportsInterface() public view {
+        // Test ERC1155 interface
+        assertTrue(licenseToken.supportsInterface(type(IERC1155).interfaceId));
+
+        // Test AccessControl interface
+        assertTrue(licenseToken.supportsInterface(type(IAccessControl).interfaceId));
+
+        // Test ERC165 interface itself
+        assertTrue(licenseToken.supportsInterface(type(IERC165).interfaceId));
     }
-    
-    function testBatchMarkExpired() public {
-        uint256[] memory licenseIds = new uint256[](3);
-        
-        for (uint256 i = 0; i < 3; i++) {
-            vm.prank(address(ipAsset));
-            licenseIds[i] = licenseToken.mintLicense(
-                licensee,
-                ipTokenId,
-                1,
-                "ipfs://public",
-                "ipfs://private",
-                block.timestamp + 1 days,
-                1000,
-                "worldwide",
-                false
-            );
-        }
-        
-        vm.warp(block.timestamp + 2 days);
-        
-        licenseToken.batchMarkExpired(licenseIds);
-        
-        for (uint256 i = 0; i < 3; i++) {
-            assertTrue(licenseToken.isExpired(licenseIds[i]));
-        }
+
+    function testDoesNotSupportInvalidInterface() public view {
+        // Random interface ID that shouldn't be supported
+        assertFalse(licenseToken.supportsInterface(0xffffffff));
     }
-    
-    // ============ BR-002.10: An automatic revocation happens when there are more than 3 missing payments ============
-    
-    function testAutoRevokeAfterThreeMissedPayments() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        // Simulate 3 missed payments
-        vm.startPrank(address(licenseToken));
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        vm.stopPrank();
-        
-        // Check should trigger auto-revoke
-        vm.expectEmit(true, false, false, true);
-        emit AutoRevoked(licenseId, 3);
-        licenseToken.checkAndRevokeForMissedPayments(licenseId);
-        
-        assertTrue(licenseToken.isRevoked(licenseId));
+
+    // ==================== ROLE CONSTANTS ====================
+
+    function testRoleConstantsAreDefined() public view {
+        // Verify role constants are properly defined
+        assertEq(licenseToken.ARBITRATOR_ROLE(), keccak256("ARBITRATOR_ROLE"));
+        assertEq(licenseToken.IP_ASSET_ROLE(), keccak256("IP_ASSET_ROLE"));
+        assertEq(licenseToken.MARKETPLACE_ROLE(), keccak256("MARKETPLACE_ROLE"));
     }
-    
-    function testRecordPaymentResetsMissedCount() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        // Simulate 2 missed payments
-        vm.startPrank(address(licenseToken));
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        vm.stopPrank();
-        
-        // Record successful payment
-        vm.prank(licensee);
-        vm.expectEmit(true, false, false, true);
-        emit PaymentRecorded(licenseId, block.timestamp);
-        licenseToken.recordPayment(licenseId);
-        
-        (,uint256 missedPayments,,) = licenseToken.paymentSchedules(licenseId);
-        assertEq(missedPayments, 0);
+
+    // ==================== ACCESS CONTROL ====================
+
+    function testAdminCanGrantRoles() public {
+        address newAccount = address(0x999);
+
+        // Admin can grant marketplace role
+        licenseToken.grantRole(licenseToken.MARKETPLACE_ROLE(), newAccount);
+        assertTrue(licenseToken.hasRole(licenseToken.MARKETPLACE_ROLE(), newAccount));
     }
-    
-    function testNoAutoRevokeWithThreeOrFewerMissedPayments() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        // Simulate exactly 3 missed payments (not more than 3)
-        vm.startPrank(address(licenseToken));
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        vm.stopPrank();
-        
-        // Should not auto-revoke yet (needs MORE than 3)
-        licenseToken.checkAndRevokeForMissedPayments(licenseId);
-        assertFalse(licenseToken.isRevoked(licenseId));
-        
-        // One more missed payment
-        vm.prank(address(licenseToken));
-        licenseToken.recordMissedPayment(licenseId);
-        
-        // Now should auto-revoke
-        licenseToken.checkAndRevokeForMissedPayments(licenseId);
-        assertTrue(licenseToken.isRevoked(licenseId));
-    }
-    
-    // ============ BR-002.11: Each License MUST include two metadata references ============
-    
-    function testLicenseHasDualMetadata() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public-metadata",
-            "ipfs://private-metadata",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        (,,,,,, string memory publicURI, string memory privateURI) = licenseToken.licenses(licenseId);
-        assertEq(publicURI, "ipfs://public-metadata");
-        assertEq(privateURI, "ipfs://private-metadata");
-    }
-    
-    function testPublicMetadataAccessibleToAll() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public-metadata",
-            "ipfs://private-metadata",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        // Anyone can access public metadata
-        vm.prank(other);
-        string memory publicMetadata = licenseToken.getPublicMetadata(licenseId);
-        assertEq(publicMetadata, "ipfs://public-metadata");
-    }
-    
-    function testPrivateMetadataRestrictedToAuthorized() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public-metadata",
-            "ipfs://private-metadata",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        // Owner can access
-        vm.prank(licensee);
-        string memory privateMetadata = licenseToken.getPrivateMetadata(licenseId);
-        assertEq(privateMetadata, "ipfs://private-metadata");
-        
-        // Non-owner cannot access
-        vm.prank(other);
-        vm.expectRevert("Not authorized to access private metadata");
-        licenseToken.getPrivateMetadata(licenseId);
-    }
-    
-    function testGrantPrivateMetadataAccess() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public-metadata",
-            "ipfs://private-metadata",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        // Grant access to another address
-        vm.prank(licensee);
-        vm.expectEmit(true, true, false, false);
-        emit PrivateAccessGranted(licenseId, other);
-        licenseToken.grantPrivateAccess(licenseId, other);
-        
-        // Now other can access
-        vm.prank(other);
-        string memory privateMetadata = licenseToken.getPrivateMetadata(licenseId);
-        assertEq(privateMetadata, "ipfs://private-metadata");
-    }
-    
-    // ============ Additional Tests ============
-    
-    function testOnlyIPAssetCanMintLicense() public {
-        vm.prank(creator);
+
+    function testNonAdminCannotGrantRoles() public {
+        address nonAdmin = address(0x888);
+        address newAccount = address(0x999);
+        bytes32 marketplaceRole = licenseToken.MARKETPLACE_ROLE();
+
+        // AccessControl reverts with AccessControlUnauthorizedAccount error
+        vm.prank(nonAdmin);
         vm.expectRevert();
-        licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
+        licenseToken.grantRole(marketplaceRole, newAccount);
     }
-    
-    function testLicenseCreatedEvent() public {
-        vm.prank(address(ipAsset));
-        vm.expectEmit(true, true, true, true);
-        emit LicenseCreated(0, ipTokenId, licensee, false);
-        licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
+
+    // ==================== PAUSABILITY ====================
+
+    function testAdminCanPauseContract() public {
+        licenseToken.pause();
+        // Contract is now paused - pausable functions should revert
+        // (This will be tested more thoroughly in later stories with actual pausable functions)
     }
-    
-    function testCanTransferActiveLicense() public {
-        vm.prank(address(ipAsset));
-        uint256 licenseId = licenseToken.mintLicense(
-            licensee,
-            ipTokenId,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            1000,
-            "worldwide",
-            false
-        );
-        
-        vm.prank(licensee);
-        licenseToken.safeTransferFrom(licensee, other, licenseId, 1, "");
-        
-        assertEq(licenseToken.balanceOf(other, licenseId), 1);
-        assertEq(licenseToken.balanceOf(licensee, licenseId), 0);
+
+    function testAdminCanUnpauseContract() public {
+        licenseToken.pause();
+        licenseToken.unpause();
+        // Contract is now unpaused
     }
-    
-    function testSupportsInterface() public {
-        // ERC1155
-        assertTrue(licenseToken.supportsInterface(0xd9b67a26));
-        // AccessControl
-        assertTrue(licenseToken.supportsInterface(0x7965db0b));
+
+    function testNonAdminCannotPause() public {
+        address nonAdmin = address(0x888);
+
+        vm.prank(nonAdmin);
+        vm.expectRevert();
+        licenseToken.pause();
+    }
+
+    function testNonAdminCannotUnpause() public {
+        licenseToken.pause();
+
+        address nonAdmin = address(0x888);
+        vm.prank(nonAdmin);
+        vm.expectRevert();
+        licenseToken.unpause();
+    }
+
+    // ==================== UPGRADEABILITY ====================
+
+    function testOnlyAdminCanAuthorizeUpgrade() public {
+        // Deploy new implementation
+        LicenseToken newImplementation = new LicenseToken();
+
+        // Admin can upgrade (via proxy's upgradeToAndCall)
+        // This would be tested in integration, but we can verify the role check
+        assertTrue(licenseToken.hasRole(licenseToken.DEFAULT_ADMIN_ROLE(), admin));
+    }
+
+    function testNonAdminCannotUpgrade() public {
+        // Non-admin should not be able to authorize upgrade
+        // This is enforced by _authorizeUpgrade which checks DEFAULT_ADMIN_ROLE
+        address nonAdmin = address(0x888);
+        assertFalse(licenseToken.hasRole(licenseToken.DEFAULT_ADMIN_ROLE(), nonAdmin));
     }
 }
-

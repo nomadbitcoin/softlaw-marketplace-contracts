@@ -12,38 +12,75 @@ interface ILicenseToken {
     /**
      * @dev License configuration and state
      * @param ipAssetId The IP asset this license is for
-     * @param expiryTime Unix timestamp when license expires
-     * @param royaltyBasisPoints Royalty rate in basis points (1000 = 10%)
+     * @param supply Number of license tokens minted (ERC-1155 supply)
+     * @param expiryTime Unix timestamp when license expires (0 or type(uint256).max = perpetual)
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
      * @param isRevoked Whether the license has been revoked
      * @param publicMetadataURI Publicly accessible metadata URI
      * @param privateMetadataURI Private metadata URI (access controlled)
+     * @param paymentInterval Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)
      */
     struct License {
         uint256 ipAssetId;
+        uint256 supply;
         uint256 expiryTime;
-        uint256 royaltyBasisPoints;
         string terms;
         bool isExclusive;
         bool isRevoked;
         string publicMetadataURI;
         string privateMetadataURI;
+        uint256 paymentInterval;
     }
 
     /**
      * @dev Payment tracking for recurring payment licenses
      * @param lastPaymentTime Timestamp of most recent payment
-     * @param missedPayments Count of consecutive missed payments
-     * @param nextPaymentDue Timestamp when next payment is due
      * @param paymentInterval Duration between required payments
+     * @notice nextPaymentDue = lastPaymentTime + paymentInterval
      */
     struct PaymentSchedule {
         uint256 lastPaymentTime;
-        uint256 missedPayments;
-        uint256 nextPaymentDue;
         uint256 paymentInterval;
     }
+
+    // ==================== CUSTOM ERRORS ====================
+
+    /// @notice Thrown when attempting to create license for invalid IP asset
+    error InvalidIPAsset();
+
+    /// @notice Thrown when license supply is invalid (e.g., zero)
+    error InvalidSupply();
+
+    /// @notice Thrown when exclusive license does not have supply of exactly 1
+    error ExclusiveLicenseMustHaveSupplyOne();
+
+    /// @notice Thrown when attempting to create multiple exclusive licenses for same IP
+    error ExclusiveLicenseAlreadyExists();
+
+    /// @notice Thrown when attempting to expire a perpetual license
+    error LicenseIsPerpetual();
+
+    /// @notice Thrown when attempting to mark a license as expired before expiry time
+    error LicenseNotYetExpired();
+
+    /// @notice Thrown when attempting to mark an already expired license as expired
+    error AlreadyMarkedExpired();
+
+    /// @notice Thrown when attempting to revoke an already revoked license
+    error AlreadyRevoked();
+
+    /// @notice Thrown when unauthorized access to private metadata is attempted
+    error NotAuthorizedForPrivateMetadata();
+
+    /// @notice Thrown when non-license owner attempts owner-only operation
+    error NotLicenseOwner();
+
+    /// @notice Thrown when insufficient missed payments for auto-revocation
+    error InsufficientMissedPayments();
+
+    /// @notice Thrown when attempting to reactivate a revoked license
+    error CannotReactivateRevokedLicense();
 
     // ==================== EVENTS ====================
 
@@ -119,11 +156,10 @@ interface ILicenseToken {
      * @dev Only callable by IP asset owner through IPAsset contract
      * @param to Address to receive the license
      * @param ipAssetId The IP asset to license
-     * @param amount Number of license tokens (for semi-fungible licenses)
+     * @param supply Number of license tokens to mint (ERC-1155 supply)
      * @param publicMetadataURI Publicly accessible metadata
      * @param privateMetadataURI Private metadata (access controlled)
      * @param expiryTime Unix timestamp when license expires
-     * @param royaltyBasisPoints Royalty rate in basis points
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
      * @return licenseId The ID of the newly minted license
@@ -131,11 +167,10 @@ interface ILicenseToken {
     function mintLicense(
         address to,
         uint256 ipAssetId,
-        uint256 amount,
+        uint256 supply,
         string memory publicMetadataURI,
         string memory privateMetadataURI,
         uint256 expiryTime,
-        uint256 royaltyBasisPoints,
         string memory terms,
         bool isExclusive
     ) external returns (uint256 licenseId);
@@ -163,21 +198,15 @@ interface ILicenseToken {
 
     /**
      * @notice Records a license payment
-     * @dev Updates payment schedule and resets missed payment counter
+     * @dev Updates lastPaymentTime in payment schedule
      * @param licenseId The license the payment is for
      */
     function recordPayment(uint256 licenseId) external;
 
     /**
-     * @notice Records a missed payment
-     * @dev Increments missed payment counter
-     * @param licenseId The license with the missed payment
-     */
-    function recordMissedPayment(uint256 licenseId) external;
-
-    /**
      * @notice Checks if a license should be auto-revoked for missed payments
-     * @dev Revokes if missed payments >= 3
+     * @dev Calculates missed payments on-demand and revokes if >= 3
+     * @dev Missed payments = (block.timestamp - lastPaymentTime) / paymentInterval
      * @param licenseId The license to check
      */
     function checkAndRevokeForMissedPayments(uint256 licenseId) external;
@@ -247,45 +276,4 @@ interface ILicenseToken {
      * @return supported Whether the interface is supported
      */
     function supportsInterface(bytes4 interfaceId) external view returns (bool supported);
-
-    // ==================== ERC-1155 STANDARD FUNCTIONS ====================
-
-    /**
-     * @notice Gets the balance of an account for a specific license token
-     * @param account The account to query
-     * @param id The license token ID
-     * @return balance The number of tokens owned
-     */
-    function balanceOf(address account, uint256 id) external view returns (uint256 balance);
-
-    /**
-     * @notice Gets the total supply of a license token
-     * @param id The license token ID
-     * @return supply The total number of tokens minted
-     */
-    function totalSupply(uint256 id) external view returns (uint256 supply);
-
-    /**
-     * @notice Safely transfers a license token
-     * @dev Transfers are blocked for expired or revoked licenses
-     * @param from Address to transfer from
-     * @param to Address to transfer to
-     * @param id License token ID
-     * @param amount Number of tokens to transfer
-     * @param data Additional data for transfer hooks
-     */
-    function safeTransferFrom(
-        address from,
-        address to,
-        uint256 id,
-        uint256 amount,
-        bytes memory data
-    ) external;
-
-    /**
-     * @notice Sets approval for all tokens for an operator
-     * @param operator The operator address
-     * @param approved Whether to approve or revoke
-     */
-    function setApprovalForAll(address operator, bool approved) external;
 }
