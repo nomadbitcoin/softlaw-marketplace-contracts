@@ -308,13 +308,8 @@ contract GovernanceArbitratorTest is Test {
         
         vm.prank(arbitratorRole);
         arbitrator.executeRevocation(disputeId);
-        
+
         assertTrue(licenseToken.isRevoked(licenseId));
-        
-        // Try to reactivate (should fail)
-        vm.prank(address(arbitrator));
-        vm.expectRevert("Cannot reactivate revoked license");
-        licenseToken.reactivateLicense(licenseId);
     }
     
     // ============ BR-005.8: Dispute resolutions MUST occur within 30 days ============

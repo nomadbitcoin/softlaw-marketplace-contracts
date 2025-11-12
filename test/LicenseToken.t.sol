@@ -1219,3 +1219,303 @@ contract MockIPAsset {
         return _activeLicenseCounts[tokenId];
     }
 }
+
+/**
+ * @title LicenseTokenRevocationTest
+ * @notice Test suite for Story 3.4 (Revocation System - Manual + Auto)
+ */
+contract LicenseTokenRevocationTest is Test {
+    LicenseToken public licenseToken;
+    MockIPAsset public mockIPAsset;
+    address public admin;
+    address public buyer;
+    address public arbitrator;
+    address public marketplace;
+    address public revenueDistributor;
+    uint256 public ipTokenId;
+
+    function setUp() public {
+        admin = address(this);
+        buyer = address(0x123);
+        arbitrator = address(0x789);
+        marketplace = address(0xABC);
+        revenueDistributor = address(0xDEF);
+
+        // Deploy mock IPAsset
+        mockIPAsset = new MockIPAsset();
+        ipTokenId = mockIPAsset.mint(admin);
+
+        // Deploy LicenseToken implementation
+        LicenseToken implementation = new LicenseToken();
+
+        // Deploy proxy with initialization
+        bytes memory initData = abi.encodeWithSelector(
+            LicenseToken.initialize.selector,
+            "https://metadata.uri/",
+            admin,
+            address(mockIPAsset),
+            arbitrator,
+            revenueDistributor
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        licenseToken = LicenseToken(address(proxy));
+
+        // Grant IP_ASSET_ROLE to mockIPAsset
+        licenseToken.grantRole(licenseToken.IP_ASSET_ROLE(), address(mockIPAsset));
+
+        // Grant MARKETPLACE_ROLE to marketplace
+        licenseToken.grantRole(licenseToken.MARKETPLACE_ROLE(), marketplace);
+    }
+
+    // ==================== STORY 3.4: AC1 - Only ARBITRATOR_ROLE Can Manually Revoke ====================
+
+    function testOnlyArbitratorCanRevokeLicense() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+
+        // Arbitrator revokes license
+        vm.prank(arbitrator);
+        licenseToken.revokeLicense(licenseId, "Violation of terms");
+
+        // Verify revoked
+        (,,,,,, bool isRevoked,) = licenseToken.getLicenseInfo(licenseId);
+        assertTrue(isRevoked);
+    }
+
+    function testNonArbitratorCannotRevokeLicense() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+
+        // Non-arbitrator attempts to revoke
+        address nonArbitrator = address(0x999);
+        vm.prank(nonArbitrator);
+        vm.expectRevert();
+        licenseToken.revokeLicense(licenseId, "Unauthorized attempt");
+    }
+
+    // ==================== STORY 3.4: AC2 - Only MARKETPLACE_ROLE Can Auto-Revoke ====================
+
+    function testMarketplaceCanRevokeForMissedPayments() public {
+        // Mint recurring license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days);
+
+        // Marketplace revokes for 4 missed payments
+        vm.prank(marketplace);
+        licenseToken.revokeForMissedPayments(licenseId, 4);
+
+        // Verify revoked
+        (,,,,,, bool isRevoked,) = licenseToken.getLicenseInfo(licenseId);
+        assertTrue(isRevoked);
+    }
+
+    function testOnlyMarketplaceCanAutoRevoke() public {
+        // Mint recurring license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days);
+
+        // Non-marketplace attempts to auto-revoke
+        address nonMarketplace = address(0x999);
+        vm.prank(nonMarketplace);
+        vm.expectRevert();
+        licenseToken.revokeForMissedPayments(licenseId, 4);
+    }
+
+    function testCannotAutoRevokeWithLessThan3MissedPayments() public {
+        // Mint recurring license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days);
+
+        // Try to revoke with only 3 missed payments (needs > 3)
+        vm.prank(marketplace);
+        vm.expectRevert(ILicenseToken.InsufficientMissedPayments.selector);
+        licenseToken.revokeForMissedPayments(licenseId, 3);
+
+        // 4 missed payments should work
+        vm.prank(marketplace);
+        licenseToken.revokeForMissedPayments(licenseId, 4);
+
+        (,,,,,, bool isRevoked,) = licenseToken.getLicenseInfo(licenseId);
+        assertTrue(isRevoked);
+    }
+
+    // ==================== STORY 3.4: AC3 - Both Set isRevoked Flag ====================
+
+    function testRevokeLicenseSetsIsRevokedFlag() public {
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+
+        vm.prank(arbitrator);
+        licenseToken.revokeLicense(licenseId, "Test reason");
+
+        assertTrue(licenseToken.isRevoked(licenseId));
+    }
+
+    function testRevokeForMissedPaymentsSetsIsRevokedFlag() public {
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days);
+
+        vm.prank(marketplace);
+        licenseToken.revokeForMissedPayments(licenseId, 4);
+
+        assertTrue(licenseToken.isRevoked(licenseId));
+    }
+
+    // ==================== STORY 3.4: AC4-5 - Update Active License Count and Clear Exclusive ====================
+
+    function testRevokeUpdatesActiveLicenseCount() public {
+        uint256 supply = 5;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, supply, "public", "private", 0, "terms", false, 0);
+
+        // Verify initial count
+        assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), int256(supply));
+
+        // Revoke
+        vm.prank(arbitrator);
+        licenseToken.revokeLicense(licenseId, "Test");
+
+        // Verify count decremented by supply
+        assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), 0);
+    }
+
+    function testAutoRevokeUpdatesActiveLicenseCount() public {
+        uint256 supply = 3;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, supply, "public", "private", 0, "terms", false, 30 days);
+
+        // Verify initial count
+        assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), int256(supply));
+
+        // Auto-revoke
+        vm.prank(marketplace);
+        licenseToken.revokeForMissedPayments(licenseId, 4);
+
+        // Verify count decremented by supply
+        assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), 0);
+    }
+
+    function testRevokeClearsExclusiveFlag() public {
+        uint256 ipId = mockIPAsset.mint(admin);
+
+        // Mint exclusive license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipId, 1, "public", "private", 0, "terms", true, 0);
+
+        // Cannot mint another exclusive license
+        vm.prank(address(mockIPAsset));
+        vm.expectRevert(ILicenseToken.ExclusiveLicenseAlreadyExists.selector);
+        licenseToken.mintLicense(address(0x999), ipId, 1, "public", "private", 0, "terms", true, 0);
+
+        // Revoke exclusive license
+        vm.prank(arbitrator);
+        licenseToken.revokeLicense(licenseId, "Test");
+
+        // Should now be able to mint another exclusive license
+        vm.prank(address(mockIPAsset));
+        uint256 newLicenseId = licenseToken.mintLicense(address(0x999), ipId, 1, "public", "private", 0, "terms", true, 0);
+
+        assertEq(newLicenseId, licenseId + 1);
+    }
+
+    function testAutoRevokeClearsExclusiveFlag() public {
+        uint256 ipId = mockIPAsset.mint(admin);
+
+        // Mint exclusive license with recurring payment
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipId, 1, "public", "private", 0, "terms", true, 30 days);
+
+        // Auto-revoke exclusive license
+        vm.prank(marketplace);
+        licenseToken.revokeForMissedPayments(licenseId, 4);
+
+        // Should now be able to mint another exclusive license
+        vm.prank(address(mockIPAsset));
+        uint256 newLicenseId = licenseToken.mintLicense(address(0x999), ipId, 1, "public", "private", 0, "terms", true, 0);
+
+        assertEq(newLicenseId, licenseId + 1);
+    }
+
+    // ==================== STORY 3.4: AC6 - Transfer Prevention ====================
+
+    function testCannotTransferRevokedLicense() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+
+        // Revoke license
+        vm.prank(arbitrator);
+        licenseToken.revokeLicense(licenseId, "Test");
+
+        // Try to transfer revoked license
+        vm.prank(buyer);
+        vm.expectRevert(ILicenseToken.CannotTransferRevokedLicense.selector);
+        licenseToken.safeTransferFrom(buyer, address(0x999), licenseId, 1, "");
+    }
+
+    // ==================== STORY 3.4: AC7 - Revocation is Permanent ====================
+
+    function testCannotRevokeAlreadyRevokedLicense() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+
+        // Revoke license
+        vm.prank(arbitrator);
+        licenseToken.revokeLicense(licenseId, "First revocation");
+
+        // Try to revoke again
+        vm.prank(arbitrator);
+        vm.expectRevert(ILicenseToken.AlreadyRevoked.selector);
+        licenseToken.revokeLicense(licenseId, "Second revocation");
+    }
+
+    // ==================== STORY 3.4: AC8-9 - Event Emissions ====================
+
+    function testLicenseRevokedEvent() public {
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+
+        vm.expectEmit(true, false, false, true);
+        emit ILicenseToken.LicenseRevoked(licenseId, "Violation of terms");
+
+        vm.prank(arbitrator);
+        licenseToken.revokeLicense(licenseId, "Violation of terms");
+    }
+
+    function testAutoRevokedEvent() public {
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days);
+
+        vm.expectEmit(true, false, false, true);
+        emit ILicenseToken.AutoRevoked(licenseId, 4);
+
+        vm.prank(marketplace);
+        licenseToken.revokeForMissedPayments(licenseId, 4);
+    }
+
+    // ==================== STORY 3.4: AC10 - Integration Test (Transfer + Metadata) ====================
+
+    function testLicenseTransferAndMetadataAccess() public {
+        // Note: This test will pass once metadata functions are implemented in future stories
+        // For now, we test the transfer portion which is already functional
+
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+
+        // Transfer license
+        vm.prank(buyer);
+        licenseToken.safeTransferFrom(buyer, address(0x999), licenseId, 1, "");
+
+        // Verify transfer
+        assertEq(licenseToken.balanceOf(address(0x999), licenseId), 1);
+        assertEq(licenseToken.balanceOf(buyer, licenseId), 0);
+
+        // Metadata access tests will be added when getPrivateMetadata is implemented
+    }
+}

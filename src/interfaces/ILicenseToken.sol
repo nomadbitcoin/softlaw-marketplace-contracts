@@ -4,7 +4,8 @@ pragma solidity ^0.8.28;
 /**
  * @title ILicenseToken
  * @notice Interface for License Token contract (ERC-1155 semi-fungible tokens)
- * @dev Manages licenses for IP assets with expiry, revocation, and payment tracking
+ * @dev Manages licenses for IP assets with expiry and revocation
+ * @dev Payment tracking is handled by Marketplace contract
  */
 interface ILicenseToken {
     // ==================== STRUCTS ====================
@@ -30,17 +31,6 @@ interface ILicenseToken {
         bool isRevoked;
         string publicMetadataURI;
         string privateMetadataURI;
-        uint256 paymentInterval;
-    }
-
-    /**
-     * @dev Payment tracking for recurring payment licenses
-     * @param lastPaymentTime Timestamp of most recent payment
-     * @param paymentInterval Duration between required payments
-     * @notice nextPaymentDue = lastPaymentTime + paymentInterval
-     */
-    struct PaymentSchedule {
-        uint256 lastPaymentTime;
         uint256 paymentInterval;
     }
 
@@ -79,9 +69,6 @@ interface ILicenseToken {
     /// @notice Thrown when insufficient missed payments for auto-revocation
     error InsufficientMissedPayments();
 
-    /// @notice Thrown when attempting to reactivate a revoked license
-    error CannotReactivateRevokedLicense();
-
     /// @notice Thrown when attempting to transfer an expired license
     error CannotTransferExpiredLicense();
 
@@ -118,13 +105,6 @@ interface ILicenseToken {
      * @param reason Human-readable revocation reason
      */
     event LicenseRevoked(uint256 indexed licenseId, string reason);
-
-    /**
-     * @notice Emitted when a license payment is recorded
-     * @param licenseId The license the payment is for
-     * @param timestamp Time the payment was recorded
-     */
-    event PaymentRecorded(uint256 indexed licenseId, uint256 timestamp);
 
     /**
      * @notice Emitted when a license is automatically revoked for missed payments
@@ -207,19 +187,14 @@ interface ILicenseToken {
     function revokeLicense(uint256 licenseId, string memory reason) external;
 
     /**
-     * @notice Records a license payment
-     * @dev Updates lastPaymentTime in payment schedule
-     * @param licenseId The license the payment is for
+     * @notice Revokes a license for missed payments
+     * @dev Only callable by MARKETPLACE_ROLE
+     * @dev Payment tracking is handled by Marketplace contract
+     * @dev Marketplace calculates missed payments and calls this function when threshold exceeded
+     * @param licenseId The license to revoke
+     * @param missedCount Number of missed payments (must be > 3)
      */
-    function recordPayment(uint256 licenseId) external;
-
-    /**
-     * @notice Checks if a license should be auto-revoked for missed payments
-     * @dev Calculates missed payments on-demand and revokes if >= 3
-     * @dev Missed payments = (block.timestamp - lastPaymentTime) / paymentInterval
-     * @param licenseId The license to check
-     */
-    function checkAndRevokeForMissedPayments(uint256 licenseId) external;
+    function revokeForMissedPayments(uint256 licenseId, uint256 missedCount) external;
 
     /**
      * @notice Gets the public metadata URI for a license
@@ -264,13 +239,6 @@ interface ILicenseToken {
      * @param arbitrator New arbitrator contract address
      */
     function setArbitratorContract(address arbitrator) external;
-
-    /**
-     * @notice Reactivates a previously expired or revoked license
-     * @dev Only callable by admin or arbitrator (e.g., after dispute resolution)
-     * @param licenseId The license to reactivate
-     */
-    function reactivateLicense(uint256 licenseId) external;
 
     /**
      * @notice Grants a role to an account

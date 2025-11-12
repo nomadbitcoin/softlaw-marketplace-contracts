@@ -63,8 +63,8 @@ contract LicenseToken is
         uint256 paymentInterval
     ) external onlyRole(IP_ASSET_ROLE) whenNotPaused returns (uint256) {
         try IIPAsset(ipAssetContract).hasActiveDispute(ipAssetId) returns (bool) {
-        // Validate IP asset exists by checking if it has an active dispute status
-        // This is a lightweight check that the IP asset contract recognizes this token
+            // Validate IP asset exists by checking if it has an active dispute status
+            // This is a lightweight check that the IP asset contract recognizes this token
         } catch {
             revert InvalidIPAsset();
         }
@@ -126,11 +126,29 @@ contract LicenseToken is
         }
     }
 
-    function revokeLicense(uint256 licenseId, string memory reason) external {}
+    function revokeLicense(uint256 licenseId, string memory reason) external onlyRole(ARBITRATOR_ROLE) {
+        _revoke(licenseId);
+        emit LicenseRevoked(licenseId, reason);
+    }
 
-    function recordPayment(uint256 licenseId) external {}
+    function revokeForMissedPayments(uint256 licenseId, uint256 missedCount) external onlyRole(MARKETPLACE_ROLE) {
+        if (missedCount <= 3) revert InsufficientMissedPayments();
+        _revoke(licenseId);
+        emit AutoRevoked(licenseId, missedCount);
+    }
 
-    function checkAndRevokeForMissedPayments(uint256 licenseId) external {}
+    function _revoke(uint256 licenseId) internal {
+        if (licenses[licenseId].isRevoked) revert AlreadyRevoked();
+
+        licenses[licenseId].isRevoked = true;
+
+        if (licenses[licenseId].isExclusive) {
+            _hasExclusiveLicense[licenses[licenseId].ipAssetId] = false;
+        }
+
+        License memory license = licenses[licenseId];
+        IIPAsset(ipAssetContract).updateActiveLicenseCount(license.ipAssetId, -int256(license.supply));
+    }
 
     function getPublicMetadata(uint256 licenseId) external view returns (string memory) {
         return "";
@@ -143,7 +161,7 @@ contract LicenseToken is
     function grantPrivateAccess(uint256 licenseId, address account) external {}
 
     function isRevoked(uint256 licenseId) external view returns (bool) {
-        return false;
+        return licenses[licenseId].isRevoked;
     }
 
     function isExpired(uint256 licenseId) external view returns (bool) {
@@ -151,8 +169,6 @@ contract LicenseToken is
     }
 
     function setArbitratorContract(address arbitrator) external onlyRole(DEFAULT_ADMIN_ROLE) {}
-
-    function reactivateLicense(uint256 licenseId) external {}
 
     function grantRole(bytes32 role, address account)
         public

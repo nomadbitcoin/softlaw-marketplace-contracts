@@ -90,6 +90,7 @@ contract IntegrationTest is Test {
         ipAsset.grantRole(ipAsset.ARBITRATOR_ROLE(), address(arbitrator));
         licenseToken.grantRole(licenseToken.ARBITRATOR_ROLE(), address(arbitrator));
         licenseToken.grantRole(licenseToken.IP_ASSET_ROLE(), address(ipAsset));
+        licenseToken.grantRole(licenseToken.MARKETPLACE_ROLE(), address(marketplace));
         arbitrator.grantRole(arbitrator.ARBITRATOR_ROLE(), arbitratorRole);
         revenueDistributor.grantRole(revenueDistributor.CONFIGURATOR_ROLE(), admin);
         
@@ -268,18 +269,19 @@ contract IntegrationTest is Test {
 
         // 2. NOTE: Missed payments are now calculated on-demand by Marketplace
         //    based on: (block.timestamp - lastPaymentTime) / paymentInterval
-        //    This test will be updated when Marketplace contract is implemented
-        //    For now, checkAndRevokeForMissedPayments() will calculate internally
+        //    This test simulates Marketplace calling revokeForMissedPayments()
+        //    Marketplace would calculate missed payments and call this function
 
-        // 3. Check triggers auto-revoke (calculates missed payments on-demand)
-        licenseToken.checkAndRevokeForMissedPayments(licenseId);
+        // 3. Marketplace calculates 4 missed payments and triggers auto-revoke
+        vm.prank(address(marketplace));
+        licenseToken.revokeForMissedPayments(licenseId, 4);
 
         // 4. Verify license is revoked
         assertTrue(licenseToken.isRevoked(licenseId));
         
         // 5. Verify cannot transfer
         vm.prank(licensee);
-        vm.expectRevert("License revoked");
+        vm.expectRevert(ILicenseToken.CannotTransferRevokedLicense.selector);
         licenseToken.safeTransferFrom(licensee, buyer, licenseId, 1, "");
     }
     
