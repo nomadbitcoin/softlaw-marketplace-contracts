@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "./interfaces/IIPAsset.sol";
+import "./interfaces/ILicenseToken.sol";
 import "./interfaces/IRevenueDistributor.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
@@ -69,20 +70,28 @@ contract IPAsset is
         string memory publicMetadataURI,
         string memory privateMetadataURI,
         uint256 expiryTime,
-        uint256 royaltyBasisPoints,
         string memory terms,
-        bool isExclusive
+        bool isExclusive,
+        uint256 paymentInterval
     ) external whenNotPaused returns (uint256) {
         if (ownerOf(ipTokenId) != msg.sender) revert NotTokenOwner();
         if (licensee == address(0)) revert InvalidAddress();
 
-        // TODO: REMOVE IN EPIC 3 STORY 3.2 - Replace with LicenseToken integration
-        // PHASE 1: Temporary increment for burn protection tests
-        // PHASE 2: LicenseToken will callback to updateActiveLicenseCount()
-        activeLicenseCount[ipTokenId]++;
+        // Call LicenseToken to mint the actual license
+        uint256 licenseId = ILicenseToken(licenseTokenContract).mintLicense(
+            licensee,
+            ipTokenId,
+            supply,
+            publicMetadataURI,
+            privateMetadataURI,
+            expiryTime,
+            terms,
+            isExclusive,
+            paymentInterval
+        );
 
-        emit LicenseRegistered(ipTokenId, 0, licensee, supply, isExclusive);
-        return 0; // Placeholder - will return real ID in Phase 2
+        emit LicenseRegistered(ipTokenId, licenseId, licensee, supply, isExclusive);
+        return licenseId;
     }
 
     function updateMetadata(uint256 tokenId, string memory newURI) external whenNotPaused {

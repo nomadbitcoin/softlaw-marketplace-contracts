@@ -129,10 +129,8 @@ contract IntegrationTest is Test {
             "ipfs://public-terms",
             "ipfs://private-terms",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         assertEq(licenseToken.balanceOf(licensee, licenseId), 5);
         
@@ -214,10 +212,8 @@ contract IntegrationTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         // 2. IP owner submits dispute
         vm.prank(creator);
@@ -267,10 +263,8 @@ contract IntegrationTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
 
         // 2. NOTE: Missed payments are now calculated on-demand by Marketplace
         //    based on: (block.timestamp - lastPaymentTime) / paymentInterval
@@ -304,10 +298,8 @@ contract IntegrationTest is Test {
             "ipfs://public-metadata",
             "ipfs://private-metadata",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         // 2. Licensee can access both metadata
         vm.prank(licensee);
@@ -377,10 +369,8 @@ contract IntegrationTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         // 2. Cannot burn with active license
         vm.prank(creator);

@@ -486,10 +486,9 @@ contract IPAssetTest is Test {
             5, // supply
             "ipfs://public",
             "ipfs://private",
-            block.timestamp + 365 days,
-            1000, // 10% royalty
-            "Commercial use license",
-            false // non-exclusive
+            block.timestamp + 365 days,            "Commercial use license",
+            false, // non-exclusive
+            0 // one-time payment
         );
 
         assertEq(licenseId, 0); // Phase 1 returns placeholder
@@ -510,10 +509,9 @@ contract IPAssetTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "Commercial use license",
-            false
-        );
+            false,
+            0);
     }
 
     function testLicenseCountTracking() public {
@@ -522,10 +520,10 @@ contract IPAssetTest is Test {
 
         assertEq(ipAsset.activeLicenseCount(tokenId), 0);
 
-        ipAsset.mintLicense(tokenId, licensee, 5, "ipfs://public", "ipfs://private", block.timestamp + 365 days, 1000, "License 1", false);
+        ipAsset.mintLicense(tokenId, licensee, 5, "ipfs://public", "ipfs://private", block.timestamp + 365 days, "License 1", false, 0);
         assertEq(ipAsset.activeLicenseCount(tokenId), 1);
 
-        ipAsset.mintLicense(tokenId, other, 3, "ipfs://public2", "ipfs://private2", block.timestamp + 365 days, 500, "License 2", true);
+        ipAsset.mintLicense(tokenId, other, 3, "ipfs://public2", "ipfs://private2", block.timestamp + 365 days, "License 2", true, 0);
         assertEq(ipAsset.activeLicenseCount(tokenId), 2);
 
         vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveLicenses.selector, tokenId, 2));
@@ -551,10 +549,8 @@ contract IPAssetTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "License",
-            false
-        );
+            false, 0);
     }
 
     function testCannotMintLicenseToZeroAddress() public {
@@ -569,9 +565,9 @@ contract IPAssetTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "License",
-            false
+            false,
+            0
         );
         vm.stopPrank();
     }

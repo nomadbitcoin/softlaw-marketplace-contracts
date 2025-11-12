@@ -167,10 +167,10 @@ interface IIPAsset {
      * @param publicMetadataURI Publicly visible license metadata URI
      * @param privateMetadataURI Private license terms URI (access controlled)
      * @param expiryTime Unix timestamp when license expires
-     * @param royaltyBasisPoints Royalty rate in basis points (e.g., 1000 = 10%)
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
-     * @return licenseId The ID of the newly created license (0 in Phase 1, real ID in Phase 2)
+     * @param paymentInterval Payment interval in seconds (0 = one-time, >0 = recurring)
+     * @return licenseId The ID of the newly created license
      */
     function mintLicense(
         uint256 ipTokenId,
@@ -179,9 +179,9 @@ interface IIPAsset {
         string memory publicMetadataURI,
         string memory privateMetadataURI,
         uint256 expiryTime,
-        uint256 royaltyBasisPoints,
         string memory terms,
-        bool isExclusive
+        bool isExclusive,
+        uint256 paymentInterval
     ) external returns (uint256 licenseId);
 
     /**

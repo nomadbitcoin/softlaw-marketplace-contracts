@@ -110,10 +110,8 @@ contract GovernanceArbitratorTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
     }
     
     // ============ BR-005.1: Any party MAY submit disputes, and optional proof (document) may be included ============
@@ -202,10 +200,8 @@ contract GovernanceArbitratorTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 1 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         vm.warp(block.timestamp + 2 days);
         licenseToken.markExpired(expiredLicenseId);

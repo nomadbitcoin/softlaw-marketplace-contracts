@@ -90,12 +90,14 @@ interface ILicenseToken {
      * @param ipAssetId The IP asset this license is for
      * @param licensee The address receiving the license
      * @param isExclusive Whether this is an exclusive license
+     * @param paymentInterval Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)
      */
     event LicenseCreated(
         uint256 indexed licenseId,
         uint256 indexed ipAssetId,
         address indexed licensee,
-        bool isExclusive
+        bool isExclusive,
+        uint256 paymentInterval
     );
 
     /**
@@ -162,6 +164,7 @@ interface ILicenseToken {
      * @param expiryTime Unix timestamp when license expires
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
+     * @param paymentInterval Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)
      * @return licenseId The ID of the newly minted license
      */
     function mintLicense(
@@ -172,7 +175,8 @@ interface ILicenseToken {
         string memory privateMetadataURI,
         uint256 expiryTime,
         string memory terms,
-        bool isExclusive
+        bool isExclusive,
+        uint256 paymentInterval
     ) external returns (uint256 licenseId);
 
     /**
@@ -276,4 +280,59 @@ interface ILicenseToken {
      * @return supported Whether the interface is supported
      */
     function supportsInterface(bytes4 interfaceId) external view returns (bool supported);
+
+    /**
+     * @notice Gets the payment interval for a license
+     * @param licenseId The license ID
+     * @return interval Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)
+     */
+    function getPaymentInterval(uint256 licenseId) external view returns (uint256 interval);
+
+    /**
+     * @notice Checks if a license has recurring payments
+     * @param licenseId The license ID
+     * @return recurring True if payment interval > 0
+     */
+    function isRecurring(uint256 licenseId) external view returns (bool recurring);
+
+    /**
+     * @notice Checks if a license is one-time payment
+     * @param licenseId The license ID
+     * @return oneTime True if payment interval == 0
+     */
+    function isOneTime(uint256 licenseId) external view returns (bool oneTime);
+
+    /**
+     * @notice Gets comprehensive license information
+     * @param licenseId The license ID
+     * @return ipAssetId The IP asset this license is for
+     * @return supply Number of license tokens minted
+     * @return expiryTime Unix timestamp when license expires
+     * @return terms Human-readable license terms
+     * @return paymentInterval Payment interval in seconds
+     * @return isExclusive Whether this is an exclusive license
+     * @return revokedStatus Whether the license has been revoked
+     * @return expiredStatus Whether the license has expired
+     */
+    function getLicenseInfo(uint256 licenseId)
+        external
+        view
+        returns (
+            uint256 ipAssetId,
+            uint256 supply,
+            uint256 expiryTime,
+            string memory terms,
+            uint256 paymentInterval,
+            bool isExclusive,
+            bool revokedStatus,
+            bool expiredStatus
+        );
+
+    /**
+     * @notice Checks if a license is currently active
+     * @dev A license is active if it is neither revoked nor expired
+     * @param licenseId The license ID
+     * @return active True if license is not revoked and not expired
+     */
+    function isActiveLicense(uint256 licenseId) external view returns (bool active);
 }
