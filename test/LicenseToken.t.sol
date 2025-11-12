@@ -719,6 +719,426 @@ contract LicenseTokenTest is Test {
         // There's no function to change it, so immutability is enforced by design
     }
 
+    // ==================== STORY 3.3: AC1 - License Can Have Expiry Timestamp ====================
+
+    function testLicenseCanHaveExpiryTimestamp() public {
+        uint256 expiryTime = block.timestamp + 365 days;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            expiryTime,
+            "terms",
+            false,
+            0
+        );
+
+        (,, uint256 storedExpiryTime,,,,,) = licenseToken.getLicenseInfo(licenseId);
+        assertEq(storedExpiryTime, expiryTime);
+    }
+
+    // ==================== STORY 3.3: AC2,6 - Perpetual Licenses ====================
+
+    function testLicenseCanBePerpetual() public {
+        // Test with expiryTime = 0 (perpetual standard)
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        (,, uint256 expiryTime,,,,,) = licenseToken.getLicenseInfo(licenseId);
+        assertEq(expiryTime, 0);
+    }
+
+    function testPerpetualLicenseNeverExpires() public {
+        // Test with expiryTime = 0 (perpetual standard)
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        vm.expectRevert(ILicenseToken.LicenseIsPerpetual.selector);
+        licenseToken.markExpired(licenseId);
+    }
+
+    // ==================== STORY 3.3: AC3,4 - Mark Expired ====================
+
+    function testAnyoneCanMarkExpiredLicense() public {
+        uint256 expiryTime = block.timestamp + 100;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            expiryTime,
+            "terms",
+            false,
+            0
+        );
+
+        // Fast forward past expiry
+        vm.warp(block.timestamp + 101);
+
+        // Anyone can mark as expired
+        address randomUser = address(0x999);
+        vm.prank(randomUser);
+        licenseToken.markExpired(licenseId);
+
+        assertTrue(licenseToken.isExpired(licenseId));
+    }
+
+    function testCannotMarkNonExpiredLicense() public {
+        uint256 expiryTime = block.timestamp + 1000;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            expiryTime,
+            "terms",
+            false,
+            0
+        );
+
+        // Try to mark as expired before expiry time
+        vm.expectRevert(ILicenseToken.LicenseNotYetExpired.selector);
+        licenseToken.markExpired(licenseId);
+    }
+
+    function testCannotMarkAlreadyExpiredLicense() public {
+        uint256 expiryTime = block.timestamp + 100;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            expiryTime,
+            "terms",
+            false,
+            0
+        );
+
+        // Fast forward past expiry
+        vm.warp(block.timestamp + 101);
+
+        // Mark as expired
+        licenseToken.markExpired(licenseId);
+
+        // Try to mark again
+        vm.expectRevert(ILicenseToken.AlreadyMarkedExpired.selector);
+        licenseToken.markExpired(licenseId);
+    }
+
+    // ==================== STORY 3.3: AC4 - Expired License Tracking ====================
+
+    function testIsExpiredReturnsCorrectValue() public {
+        uint256 expiryTime = block.timestamp + 100;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            expiryTime,
+            "terms",
+            false,
+            0
+        );
+
+        // Not expired yet
+        assertFalse(licenseToken.isExpired(licenseId));
+
+        // Fast forward and mark expired
+        vm.warp(block.timestamp + 101);
+        licenseToken.markExpired(licenseId);
+
+        // Now expired
+        assertTrue(licenseToken.isExpired(licenseId));
+    }
+
+    // ==================== STORY 3.3: AC7 - Event Emission ====================
+
+    function testLicenseExpiredEvent() public {
+        uint256 expiryTime = block.timestamp + 100;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            expiryTime,
+            "terms",
+            false,
+            0
+        );
+
+        vm.warp(block.timestamp + 101);
+
+        vm.expectEmit(true, false, false, false);
+        emit ILicenseToken.LicenseExpired(licenseId);
+        licenseToken.markExpired(licenseId);
+    }
+
+    // ==================== STORY 3.3: AC3 - Batch Mark Expired ====================
+
+    function testBatchMarkExpired() public {
+        uint256 expiryTime = block.timestamp + 100;
+        uint256[] memory licenseIds = new uint256[](3);
+
+        // Mint 3 licenses
+        vm.startPrank(address(mockIPAsset));
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 ipId = mockIPAsset.mint(admin);
+            licenseIds[i] = licenseToken.mintLicense(
+                buyer,
+                ipId,
+                1,
+                "public",
+                "private",
+                expiryTime,
+                "terms",
+                false,
+                0
+            );
+        }
+        vm.stopPrank();
+
+        // Fast forward past expiry
+        vm.warp(block.timestamp + 101);
+
+        // Batch mark expired
+        licenseToken.batchMarkExpired(licenseIds);
+
+        // Verify all are expired
+        for (uint256 i = 0; i < 3; i++) {
+            assertTrue(licenseToken.isExpired(licenseIds[i]));
+        }
+    }
+
+    function testBatchMarkExpiredContinuesOnError() public {
+        uint256[] memory licenseIds = new uint256[](3);
+
+        // Mint 2 expiring licenses and 1 perpetual
+        vm.startPrank(address(mockIPAsset));
+        uint256 ipId1 = mockIPAsset.mint(admin);
+        licenseIds[0] = licenseToken.mintLicense(
+            buyer,
+            ipId1,
+            1,
+            "public",
+            "private",
+            block.timestamp + 100,
+            "terms",
+            false,
+            0
+        );
+
+        uint256 ipId2 = mockIPAsset.mint(admin);
+        licenseIds[1] = licenseToken.mintLicense(
+            buyer,
+            ipId2,
+            1,
+            "public",
+            "private",
+            0, // Perpetual
+            "terms",
+            false,
+            0
+        );
+
+        uint256 ipId3 = mockIPAsset.mint(admin);
+        licenseIds[2] = licenseToken.mintLicense(
+            buyer,
+            ipId3,
+            1,
+            "public",
+            "private",
+            block.timestamp + 100,
+            "terms",
+            false,
+            0
+        );
+        vm.stopPrank();
+
+        // Fast forward past expiry
+        vm.warp(block.timestamp + 101);
+
+        // Batch mark expired (should not revert despite perpetual license)
+        licenseToken.batchMarkExpired(licenseIds);
+
+        // Verify expiring licenses are expired
+        assertTrue(licenseToken.isExpired(licenseIds[0]));
+        assertFalse(licenseToken.isExpired(licenseIds[1])); // Perpetual remains active
+        assertTrue(licenseToken.isExpired(licenseIds[2]));
+    }
+
+    // ==================== STORY 3.3: AC5,8,9 - Transfer Validation ====================
+
+    function testCannotTransferExpiredLicense() public {
+        uint256 expiryTime = block.timestamp + 100;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            expiryTime,
+            "terms",
+            false,
+            0
+        );
+
+        // Fast forward past expiry
+        vm.warp(block.timestamp + 101);
+
+        // Mark as expired
+        licenseToken.markExpired(licenseId);
+
+        // Try to transfer expired license
+        vm.prank(buyer);
+        vm.expectRevert(ILicenseToken.CannotTransferExpiredLicense.selector);
+        licenseToken.safeTransferFrom(buyer, address(0x999), licenseId, 1, "");
+    }
+
+    function testCanTransferActiveLicense() public {
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public",
+            "private",
+            0, // Perpetual
+            "terms",
+            false,
+            0
+        );
+
+        address recipient = address(0x999);
+
+        // Transfer should succeed
+        vm.prank(buyer);
+        licenseToken.safeTransferFrom(buyer, recipient, licenseId, 1, "");
+
+        // Verify transfer
+        assertEq(licenseToken.balanceOf(recipient, licenseId), 1);
+        assertEq(licenseToken.balanceOf(buyer, licenseId), 0);
+    }
+
+    function testCanBatchTransferActiveLicenses() public {
+        // Mint 2 licenses
+        vm.startPrank(address(mockIPAsset));
+        uint256 ipId1 = mockIPAsset.mint(admin);
+        uint256 licenseId1 = licenseToken.mintLicense(
+            buyer,
+            ipId1,
+            1,
+            "public",
+            "private",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        uint256 ipId2 = mockIPAsset.mint(admin);
+        uint256 licenseId2 = licenseToken.mintLicense(
+            buyer,
+            ipId2,
+            1,
+            "public",
+            "private",
+            0,
+            "terms",
+            false,
+            0
+        );
+        vm.stopPrank();
+
+        address recipient = address(0x999);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = licenseId1;
+        ids[1] = licenseId2;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 1;
+        amounts[1] = 1;
+
+        // Batch transfer should succeed
+        vm.prank(buyer);
+        licenseToken.safeBatchTransferFrom(buyer, recipient, ids, amounts, "");
+
+        // Verify transfers
+        assertEq(licenseToken.balanceOf(recipient, licenseId1), 1);
+        assertEq(licenseToken.balanceOf(recipient, licenseId2), 1);
+        assertEq(licenseToken.balanceOf(buyer, licenseId1), 0);
+        assertEq(licenseToken.balanceOf(buyer, licenseId2), 0);
+    }
+
+    // ==================== STORY 3.3: Integration - Update Active License Count ====================
+
+    function testMarkExpiredUpdatesActiveLicenseCount() public {
+        uint256 supply = 5;
+        uint256 expiryTime = block.timestamp + 100;
+
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            supply,
+            "public",
+            "private",
+            expiryTime,
+            "terms",
+            false,
+            0
+        );
+
+        // Verify initial count
+        assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), int256(supply));
+
+        // Fast forward and mark expired
+        vm.warp(block.timestamp + 101);
+        licenseToken.markExpired(licenseId);
+
+        // Verify count decremented by supply
+        assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), 0);
+    }
+
     // ==================== Gas Optimization Check ====================
 
     function testQueryFunctionsGasOptimized() public {

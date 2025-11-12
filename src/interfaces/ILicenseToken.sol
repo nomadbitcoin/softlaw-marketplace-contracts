@@ -13,7 +13,7 @@ interface ILicenseToken {
      * @dev License configuration and state
      * @param ipAssetId The IP asset this license is for
      * @param supply Number of license tokens minted (ERC-1155 supply)
-     * @param expiryTime Unix timestamp when license expires (0 or type(uint256).max = perpetual)
+     * @param expiryTime Unix timestamp when license expires (0 = perpetual, never expires)
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
      * @param isRevoked Whether the license has been revoked
@@ -81,6 +81,12 @@ interface ILicenseToken {
 
     /// @notice Thrown when attempting to reactivate a revoked license
     error CannotReactivateRevokedLicense();
+
+    /// @notice Thrown when attempting to transfer an expired license
+    error CannotTransferExpiredLicense();
+
+    /// @notice Thrown when attempting to transfer a revoked license
+    error CannotTransferRevokedLicense();
 
     // ==================== EVENTS ====================
 

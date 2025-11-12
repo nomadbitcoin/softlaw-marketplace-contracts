@@ -62,10 +62,9 @@ contract LicenseToken is
         bool isExclusive,
         uint256 paymentInterval
     ) external onlyRole(IP_ASSET_ROLE) whenNotPaused returns (uint256) {
+        try IIPAsset(ipAssetContract).hasActiveDispute(ipAssetId) returns (bool) {
         // Validate IP asset exists by checking if it has an active dispute status
         // This is a lightweight check that the IP asset contract recognizes this token
-        try IIPAsset(ipAssetContract).hasActiveDispute(ipAssetId) returns (bool) {
-            // Valid IP asset - dispute check succeeded
         } catch {
             revert InvalidIPAsset();
         }
@@ -100,9 +99,32 @@ contract LicenseToken is
         return licenseId;
     }
 
-    function markExpired(uint256 licenseId) external {}
+    function markExpired(uint256 licenseId) external {
+        License memory license = licenses[licenseId];
 
-    function batchMarkExpired(uint256[] memory licenseIds) external {}
+        // Perpetual licenses (expiryTime == 0) cannot expire
+        if (license.expiryTime == 0) {
+            revert LicenseIsPerpetual();
+        }
+        if (block.timestamp < license.expiryTime) revert LicenseNotYetExpired();
+        if (_isExpired[licenseId]) revert AlreadyMarkedExpired();
+
+        _isExpired[licenseId] = true;
+
+        IIPAsset(ipAssetContract).updateActiveLicenseCount(license.ipAssetId, -int256(license.supply));
+
+        emit LicenseExpired(licenseId);
+    }
+
+    function batchMarkExpired(uint256[] memory licenseIds) external {
+        for (uint256 i = 0; i < licenseIds.length; i++) {
+            try this.markExpired(licenseIds[i]) {
+                // Success
+            } catch {
+                // Continue on error (don't revert entire batch)
+            }
+        }
+    }
 
     function revokeLicense(uint256 licenseId, string memory reason) external {}
 
@@ -190,6 +212,21 @@ contract LicenseToken is
 
     function isActiveLicense(uint256 licenseId) external view returns (bool) {
         return !licenses[licenseId].isRevoked && !_isExpired[licenseId];
+    }
+
+    function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
+        internal
+        virtual
+        override
+    {
+        for (uint256 i = 0; i < ids.length; i++) {
+            if (from != address(0)) {
+                // Not minting - validate transfer conditions
+                if (_isExpired[ids[i]]) revert CannotTransferExpiredLicense();
+                if (licenses[ids[i]].isRevoked) revert CannotTransferRevokedLicense();
+            }
+        }
+        super._update(from, to, ids, values);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
