@@ -126,10 +126,8 @@ contract MarketplaceTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         // Give buyer some ETH
         vm.deal(buyer, 100 ether);

@@ -42,14 +42,14 @@ interface IIPAsset {
      * @param ipTokenId The IP asset token ID this license is for
      * @param licenseId The ID of the newly registered license (0 in Phase 1 stub)
      * @param licensee The address receiving the license
-     * @param amount Number of license tokens minted (for semi-fungible licenses)
+     * @param supply Number of license tokens minted (ERC-1155 supply)
      * @param isExclusive Whether this is an exclusive license
      */
     event LicenseRegistered(
         uint256 indexed ipTokenId,
         uint256 indexed licenseId,
         address indexed licensee,
-        uint256 amount,
+        uint256 supply,
         bool isExclusive
     );
 
@@ -163,25 +163,25 @@ interface IIPAsset {
      *      Only the IP asset owner can mint licenses.
      * @param ipTokenId The IP asset to create a license for
      * @param licensee Address to receive the license
-     * @param amount Number of license tokens to mint (for semi-fungible licenses)
+     * @param supply Number of license tokens to mint (ERC-1155 supply)
      * @param publicMetadataURI Publicly visible license metadata URI
      * @param privateMetadataURI Private license terms URI (access controlled)
      * @param expiryTime Unix timestamp when license expires
-     * @param royaltyBasisPoints Royalty rate in basis points (e.g., 1000 = 10%)
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
-     * @return licenseId The ID of the newly created license (0 in Phase 1, real ID in Phase 2)
+     * @param paymentInterval Payment interval in seconds (0 = one-time, >0 = recurring)
+     * @return licenseId The ID of the newly created license
      */
     function mintLicense(
         uint256 ipTokenId,
         address licensee,
-        uint256 amount,
+        uint256 supply,
         string memory publicMetadataURI,
         string memory privateMetadataURI,
         uint256 expiryTime,
-        uint256 royaltyBasisPoints,
         string memory terms,
-        bool isExclusive
+        bool isExclusive,
+        uint256 paymentInterval
     ) external returns (uint256 licenseId);
 
     /**

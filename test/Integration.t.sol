@@ -90,6 +90,7 @@ contract IntegrationTest is Test {
         ipAsset.grantRole(ipAsset.ARBITRATOR_ROLE(), address(arbitrator));
         licenseToken.grantRole(licenseToken.ARBITRATOR_ROLE(), address(arbitrator));
         licenseToken.grantRole(licenseToken.IP_ASSET_ROLE(), address(ipAsset));
+        licenseToken.grantRole(licenseToken.MARKETPLACE_ROLE(), address(marketplace));
         arbitrator.grantRole(arbitrator.ARBITRATOR_ROLE(), arbitratorRole);
         revenueDistributor.grantRole(revenueDistributor.CONFIGURATOR_ROLE(), admin);
         
@@ -129,15 +130,14 @@ contract IntegrationTest is Test {
             "ipfs://public-terms",
             "ipfs://private-terms",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         assertEq(licenseToken.balanceOf(licensee, licenseId), 5);
         
         // 4. Verify license details
-        (uint256 linkedIpAssetId,,,,,, string memory publicURI, string memory privateURI) = 
+        // Struct: ipAssetId, supply, expiryTime, terms, isExclusive, isRevoked, publicMetadataURI, privateMetadataURI, paymentInterval
+        (uint256 linkedIpAssetId,,,,,, string memory publicURI, string memory privateURI,) =
             licenseToken.licenses(licenseId);
         assertEq(linkedIpAssetId, ipTokenId);
         assertEq(publicURI, "ipfs://public-terms");
@@ -213,10 +213,8 @@ contract IntegrationTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         // 2. IP owner submits dispute
         vm.prank(creator);
@@ -257,7 +255,7 @@ contract IntegrationTest is Test {
         // 1. Setup: Create IP and license
         vm.prank(creator);
         uint256 ipTokenId = ipAsset.mintIP(creator, "ipfs://metadata");
-        
+
         vm.prank(creator);
         uint256 licenseId = ipAsset.mintLicense(
             ipTokenId,
@@ -266,28 +264,24 @@ contract IntegrationTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
-        
-        // 2. Simulate 4 missed payments
-        vm.startPrank(address(licenseToken));
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        licenseToken.recordMissedPayment(licenseId);
-        vm.stopPrank();
-        
-        // 3. Check triggers auto-revoke
-        licenseToken.checkAndRevokeForMissedPayments(licenseId);
-        
+            false, 0);
+
+        // 2. NOTE: Missed payments are now calculated on-demand by Marketplace
+        //    based on: (block.timestamp - lastPaymentTime) / paymentInterval
+        //    This test simulates Marketplace calling revokeForMissedPayments()
+        //    Marketplace would calculate missed payments and call this function
+
+        // 3. Marketplace calculates 4 missed payments and triggers auto-revoke
+        vm.prank(address(marketplace));
+        licenseToken.revokeForMissedPayments(licenseId, 4);
+
         // 4. Verify license is revoked
         assertTrue(licenseToken.isRevoked(licenseId));
         
         // 5. Verify cannot transfer
         vm.prank(licensee);
-        vm.expectRevert("License revoked");
+        vm.expectRevert(ILicenseToken.CannotTransferRevokedLicense.selector);
         licenseToken.safeTransferFrom(licensee, buyer, licenseId, 1, "");
     }
     
@@ -306,10 +300,8 @@ contract IntegrationTest is Test {
             "ipfs://public-metadata",
             "ipfs://private-metadata",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         // 2. Licensee can access both metadata
         vm.prank(licensee);
@@ -379,10 +371,8 @@ contract IntegrationTest is Test {
             "ipfs://public",
             "ipfs://private",
             block.timestamp + 365 days,
-            1000,
             "worldwide",
-            false
-        );
+            false, 0);
         
         // 2. Cannot burn with active license
         vm.prank(creator);
