@@ -27,6 +27,7 @@ contract LicenseToken is
     mapping(uint256 => mapping(address => bool)) private _privateAccessGrants;
     uint256 private _licenseIdCounter;
     address public ipAssetContract;
+    address public arbitratorContract;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -50,6 +51,7 @@ contract LicenseToken is
         _grantRole(IP_ASSET_ROLE, ipAsset);
 
         ipAssetContract = ipAsset;
+        arbitratorContract = arbitrator;
     }
 
     function mintLicense(
@@ -191,7 +193,23 @@ contract LicenseToken is
         return _isExpired[licenseId];
     }
 
-    function setArbitratorContract(address arbitrator) external onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function setArbitratorContract(address arbitrator) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (arbitrator == address(0)) revert InvalidArbitratorAddress();
+        address oldArbitrator = arbitratorContract;
+        arbitratorContract = arbitrator;
+        _revokeRole(ARBITRATOR_ROLE, oldArbitrator);
+        _grantRole(ARBITRATOR_ROLE, arbitrator);
+        emit ArbitratorContractUpdated(oldArbitrator, arbitrator);
+    }
+
+    function setIPAssetContract(address ipAsset) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (ipAsset == address(0)) revert InvalidIPAssetAddress();
+        address oldIPAsset = ipAssetContract;
+        ipAssetContract = ipAsset;
+        _revokeRole(IP_ASSET_ROLE, oldIPAsset);
+        _grantRole(IP_ASSET_ROLE, ipAsset);
+        emit IPAssetContractUpdated(oldIPAsset, ipAsset);
+    }
 
     function grantRole(bytes32 role, address account)
         public

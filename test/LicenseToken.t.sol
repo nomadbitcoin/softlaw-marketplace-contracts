@@ -1788,3 +1788,273 @@ contract LicenseTokenRevocationTest is Test {
         // Metadata access tests will be added when getPrivateMetadata is implemented
     }
 }
+
+/**
+ * @title LicenseTokenAdminTest
+ * @notice Test suite for Story 3.6 (Admin Functions & Upgrade Testing)
+ */
+contract LicenseTokenAdminTest is Test {
+    LicenseToken public licenseToken;
+    MockIPAsset public mockIPAsset;
+    address public admin;
+    address public buyer;
+    address public arbitrator;
+    address public revenueDistributor;
+    uint256 public ipTokenId;
+
+    function setUp() public {
+        admin = address(this);
+        buyer = address(0x123);
+        arbitrator = address(0x456);
+        revenueDistributor = address(0x789);
+
+        // Deploy mock IPAsset
+        mockIPAsset = new MockIPAsset();
+        ipTokenId = mockIPAsset.mint(admin);
+
+        // Deploy LicenseToken implementation
+        LicenseToken implementation = new LicenseToken();
+
+        // Deploy proxy with initialization
+        bytes memory initData = abi.encodeWithSelector(
+            LicenseToken.initialize.selector,
+            "https://metadata.uri/",
+            admin,
+            address(mockIPAsset),
+            arbitrator,
+            revenueDistributor
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        licenseToken = LicenseToken(address(proxy));
+
+        // Grant IP_ASSET_ROLE to mockIPAsset
+        licenseToken.grantRole(licenseToken.IP_ASSET_ROLE(), address(mockIPAsset));
+    }
+
+    // ==================== STORY 3.6: AC1 - Admin Setter Functions ====================
+
+    function testSetArbitratorContractOnlyAdmin() public {
+        address newArbitrator = address(0x999);
+
+        // Expect event emission
+        vm.expectEmit(true, true, false, true);
+        emit ILicenseToken.ArbitratorContractUpdated(arbitrator, newArbitrator);
+
+        // Admin can set arbitrator
+        licenseToken.setArbitratorContract(newArbitrator);
+
+        // Verify new arbitrator has role
+        assertTrue(licenseToken.hasRole(licenseToken.ARBITRATOR_ROLE(), newArbitrator));
+        // Verify old arbitrator no longer has role
+        assertFalse(licenseToken.hasRole(licenseToken.ARBITRATOR_ROLE(), arbitrator));
+        // Verify contract reference updated
+        assertEq(licenseToken.arbitratorContract(), newArbitrator);
+    }
+
+    function testNonAdminCannotSetArbitratorContract() public {
+        address nonAdmin = address(0x888);
+        address newArbitrator = address(0x999);
+
+        // Non-admin cannot set arbitrator
+        vm.prank(nonAdmin);
+        vm.expectRevert();
+        licenseToken.setArbitratorContract(newArbitrator);
+    }
+
+    function testCannotSetArbitratorToZeroAddress() public {
+        vm.expectRevert(ILicenseToken.InvalidArbitratorAddress.selector);
+        licenseToken.setArbitratorContract(address(0));
+    }
+
+    function testSetIPAssetContractOnlyAdmin() public {
+        address newIPAsset = address(0x999);
+
+        // Expect event emission
+        vm.expectEmit(true, true, false, true);
+        emit ILicenseToken.IPAssetContractUpdated(address(mockIPAsset), newIPAsset);
+
+        // Admin can set IP asset contract
+        licenseToken.setIPAssetContract(newIPAsset);
+
+        // Verify new contract address and role
+        assertEq(licenseToken.ipAssetContract(), newIPAsset);
+        assertTrue(licenseToken.hasRole(licenseToken.IP_ASSET_ROLE(), newIPAsset));
+        assertFalse(licenseToken.hasRole(licenseToken.IP_ASSET_ROLE(), address(mockIPAsset)));
+    }
+
+    function testNonAdminCannotSetIPAssetContract() public {
+        address nonAdmin = address(0x888);
+        address newIPAsset = address(0x999);
+
+        // Non-admin cannot set IP asset contract
+        vm.prank(nonAdmin);
+        vm.expectRevert();
+        licenseToken.setIPAssetContract(newIPAsset);
+    }
+
+    function testCannotSetIPAssetToZeroAddress() public {
+        vm.expectRevert(ILicenseToken.InvalidIPAssetAddress.selector);
+        licenseToken.setIPAssetContract(address(0));
+    }
+
+    // ==================== STORY 3.6: AC2 - Pause/Unpause Functions ====================
+
+    function testOnlyAdminCanPause() public {
+        // Admin can pause
+        licenseToken.pause();
+
+        // Verify paused (will be tested by trying to mint)
+        vm.prank(address(mockIPAsset));
+        vm.expectRevert();
+        licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+    }
+
+    function testOnlyAdminCanUnpause() public {
+        // Pause first
+        licenseToken.pause();
+
+        // Admin can unpause
+        licenseToken.unpause();
+
+        // Verify unpaused by successfully minting
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+        assertEq(licenseId, 0);
+    }
+
+    function testCannotOperateWhenPaused() public {
+        // Pause contract
+        licenseToken.pause();
+
+        // Try to mint license (should fail)
+        vm.prank(address(mockIPAsset));
+        vm.expectRevert();
+        licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+
+        // Unpause
+        licenseToken.unpause();
+
+        // Now should work
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0);
+        assertEq(licenseId, 0);
+    }
+
+    // ==================== STORY 3.6: AC3 - UUPS Upgrade Authorization ====================
+
+    function testOnlyAdminCanUpgrade() public {
+        // Deploy new implementation
+        LicenseTokenV2 newImpl = new LicenseTokenV2();
+
+        // Try to upgrade as non-admin (should fail)
+        address nonAdmin = address(0x123);
+        vm.prank(nonAdmin);
+        vm.expectRevert();
+        licenseToken.upgradeToAndCall(address(newImpl), "");
+
+        // Upgrade as admin (should work)
+        licenseToken.upgradeToAndCall(address(newImpl), "");
+    }
+
+    function testCannotUpgradeWithoutAdminRole() public {
+        // Deploy new implementation
+        LicenseTokenV2 newImpl = new LicenseTokenV2();
+
+        // Non-admin cannot upgrade
+        address nonAdmin = address(0x999);
+        vm.prank(nonAdmin);
+        vm.expectRevert();
+        licenseToken.upgradeToAndCall(address(newImpl), "");
+    }
+
+    // ==================== STORY 3.6: AC4 - Upgrade State Preservation ====================
+
+    function testUpgradePreservesState() public {
+        // Setup: Mint a license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "public_uri",
+            "private_uri",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        // Store state before upgrade
+        (uint256 ipAssetId, uint256 supply,,,,,,) = licenseToken.getLicenseInfo(licenseId);
+        assertEq(ipAssetId, ipTokenId);
+        assertEq(supply, 1);
+
+        // Deploy new implementation
+        LicenseTokenV2 newImpl = new LicenseTokenV2();
+
+        // Upgrade (as admin)
+        licenseToken.upgradeToAndCall(address(newImpl), "");
+
+        // Verify state preserved
+        (uint256 ipAssetIdAfter, uint256 supplyAfter,,,,,,) = licenseToken.getLicenseInfo(licenseId);
+        assertEq(ipAssetId, ipAssetIdAfter);
+        assertEq(supply, supplyAfter);
+
+        // Verify new functionality
+        LicenseTokenV2 upgraded = LicenseTokenV2(address(licenseToken));
+        assertEq(upgraded.newFunction(), "upgraded");
+        assertEq(upgraded.version(), 2);
+    }
+
+    function testUpgradeV2Implementation() public {
+        // Deploy new implementation
+        LicenseTokenV2 newImpl = new LicenseTokenV2();
+
+        // Upgrade
+        licenseToken.upgradeToAndCall(address(newImpl), "");
+
+        // Cast to V2 and test new functionality
+        LicenseTokenV2 v2 = LicenseTokenV2(address(licenseToken));
+        assertEq(v2.newFunction(), "upgraded");
+        assertEq(v2.version(), 2);
+    }
+
+    function testUpgradePreservesRoles() public {
+        // Deploy new implementation
+        LicenseTokenV2 newImpl = new LicenseTokenV2();
+
+        // Upgrade
+        licenseToken.upgradeToAndCall(address(newImpl), "");
+
+        // Verify roles preserved
+        assertTrue(licenseToken.hasRole(licenseToken.DEFAULT_ADMIN_ROLE(), admin));
+        assertTrue(licenseToken.hasRole(licenseToken.ARBITRATOR_ROLE(), arbitrator));
+        assertTrue(licenseToken.hasRole(licenseToken.IP_ASSET_ROLE(), address(mockIPAsset)));
+    }
+
+    function testUpgradePreservesContractReferences() public {
+        // Deploy new implementation
+        LicenseTokenV2 newImpl = new LicenseTokenV2();
+
+        // Upgrade
+        licenseToken.upgradeToAndCall(address(newImpl), "");
+
+        // Verify contract references preserved
+        assertEq(licenseToken.ipAssetContract(), address(mockIPAsset));
+    }
+}
+
+/**
+ * @title LicenseTokenV2
+ * @notice Test contract for upgrade testing (Story 3.6)
+ * @dev Adds new functionality for testing state preservation
+ */
+contract LicenseTokenV2 is LicenseToken {
+    function newFunction() external pure returns (string memory) {
+        return "upgraded";
+    }
+
+    function version() external pure returns (uint256) {
+        return 2;
+    }
+}

@@ -75,6 +75,12 @@ interface ILicenseToken {
     /// @notice Thrown when attempting to transfer a revoked license
     error CannotTransferRevokedLicense();
 
+    /// @notice Thrown when attempting to set arbitrator to zero address
+    error InvalidArbitratorAddress();
+
+    /// @notice Thrown when attempting to set IP asset contract to zero address
+    error InvalidIPAssetAddress();
+
     // ==================== EVENTS ====================
 
     /**
@@ -126,6 +132,20 @@ interface ILicenseToken {
      * @param account The account whose access was revoked
      */
     event PrivateAccessRevoked(uint256 indexed licenseId, address indexed account);
+
+    /**
+     * @notice Emitted when the arbitrator contract is updated
+     * @param oldArbitrator The previous arbitrator contract address
+     * @param newArbitrator The new arbitrator contract address
+     */
+    event ArbitratorContractUpdated(address indexed oldArbitrator, address indexed newArbitrator);
+
+    /**
+     * @notice Emitted when the IP asset contract is updated
+     * @param oldIPAsset The previous IP asset contract address
+     * @param newIPAsset The new IP asset contract address
+     */
+    event IPAssetContractUpdated(address indexed oldIPAsset, address indexed newIPAsset);
 
     // ==================== FUNCTIONS ====================
 
@@ -262,6 +282,13 @@ interface ILicenseToken {
      * @param arbitrator New arbitrator contract address
      */
     function setArbitratorContract(address arbitrator) external;
+
+    /**
+     * @notice Updates the IPAsset contract address
+     * @dev Only callable by admin
+     * @param ipAsset New IP asset contract address
+     */
+    function setIPAssetContract(address ipAsset) external;
 
     /**
      * @notice Grants a role to an account
