@@ -1139,6 +1139,275 @@ contract LicenseTokenTest is Test {
         assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), 0);
     }
 
+    // ==================== STORY 3.5: AC1 - getPublicMetadata() Returns Public Metadata ====================
+
+    function testLicenseHasDualMetadata() public {
+        // Mint license with both metadata URIs
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "https://public.uri/metadata.json",
+            "https://private.uri/secret.json",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        // Verify both URIs stored
+        string memory publicURI = licenseToken.getPublicMetadata(licenseId);
+        assertEq(publicURI, "https://public.uri/metadata.json");
+
+        vm.prank(buyer); // Owner can access private
+        string memory privateURI = licenseToken.getPrivateMetadata(licenseId);
+        assertEq(privateURI, "https://private.uri/secret.json");
+    }
+
+    // ==================== STORY 3.5: AC1 - Public Metadata Accessible to All ====================
+
+    function testPublicMetadataAccessibleToAll() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "https://public.uri/metadata.json",
+            "https://private.uri/secret.json",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        // Anyone can access public metadata
+        address randomUser = address(0x999);
+        vm.prank(randomUser);
+        string memory publicURI = licenseToken.getPublicMetadata(licenseId);
+        assertEq(publicURI, "https://public.uri/metadata.json");
+    }
+
+    // ==================== STORY 3.5: AC2,5 - Private Metadata Access Control ====================
+
+    function testPrivateMetadataRestrictedToAuthorized() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "https://public.uri/metadata.json",
+            "https://private.uri/secret.json",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        // Unauthorized user cannot access private metadata
+        address unauthorized = address(0x999);
+        vm.prank(unauthorized);
+        vm.expectRevert(ILicenseToken.NotAuthorizedForPrivateMetadata.selector);
+        licenseToken.getPrivateMetadata(licenseId);
+
+        // Owner can access
+        vm.prank(buyer);
+        string memory privateURI = licenseToken.getPrivateMetadata(licenseId);
+        assertEq(privateURI, "https://private.uri/secret.json");
+
+        // Admin can access
+        vm.prank(admin);
+        privateURI = licenseToken.getPrivateMetadata(licenseId);
+        assertEq(privateURI, "https://private.uri/secret.json");
+    }
+
+    // ==================== STORY 3.5: AC3,4 - Grant Private Metadata Access ====================
+
+    function testGrantPrivateMetadataAccess() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "https://public.uri/metadata.json",
+            "https://private.uri/secret.json",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        address grantee = address(0x999);
+
+        // Grantee cannot access initially
+        vm.prank(grantee);
+        vm.expectRevert(ILicenseToken.NotAuthorizedForPrivateMetadata.selector);
+        licenseToken.getPrivateMetadata(licenseId);
+
+        // Owner grants access
+        vm.prank(buyer);
+        vm.expectEmit(true, true, false, true);
+        emit ILicenseToken.PrivateAccessGranted(licenseId, grantee);
+        licenseToken.grantPrivateAccess(licenseId, grantee);
+
+        // Now grantee can access
+        vm.prank(grantee);
+        string memory privateURI = licenseToken.getPrivateMetadata(licenseId);
+        assertEq(privateURI, "https://private.uri/secret.json");
+    }
+
+    function testNonOwnerCannotGrantPrivateAccess() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "https://public.uri/metadata.json",
+            "https://private.uri/secret.json",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        address nonOwner = address(0x999);
+        address grantee = address(0x888);
+
+        // Non-owner attempts to grant access
+        vm.prank(nonOwner);
+        vm.expectRevert(ILicenseToken.NotLicenseOwner.selector);
+        licenseToken.grantPrivateAccess(licenseId, grantee);
+    }
+
+    // ==================== STORY 3.5 ENHANCEMENTS: Revoke and Query Access ====================
+
+    function testRevokePrivateMetadataAccess() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "https://public.uri/metadata.json",
+            "https://private.uri/secret.json",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        address grantee = address(0x999);
+
+        // Owner grants access
+        vm.prank(buyer);
+        licenseToken.grantPrivateAccess(licenseId, grantee);
+
+        // Verify grantee can access
+        vm.prank(grantee);
+        string memory privateURI = licenseToken.getPrivateMetadata(licenseId);
+        assertEq(privateURI, "https://private.uri/secret.json");
+
+        // Owner revokes access
+        vm.prank(buyer);
+        vm.expectEmit(true, true, false, true);
+        emit ILicenseToken.PrivateAccessRevoked(licenseId, grantee);
+        licenseToken.revokePrivateAccess(licenseId, grantee);
+
+        // Grantee can no longer access
+        vm.prank(grantee);
+        vm.expectRevert(ILicenseToken.NotAuthorizedForPrivateMetadata.selector);
+        licenseToken.getPrivateMetadata(licenseId);
+    }
+
+    function testNonOwnerCannotRevokePrivateAccess() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "https://public.uri/metadata.json",
+            "https://private.uri/secret.json",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        address grantee = address(0x999);
+
+        // Owner grants access
+        vm.prank(buyer);
+        licenseToken.grantPrivateAccess(licenseId, grantee);
+
+        address nonOwner = address(0x888);
+
+        // Non-owner attempts to revoke access
+        vm.prank(nonOwner);
+        vm.expectRevert(ILicenseToken.NotLicenseOwner.selector);
+        licenseToken.revokePrivateAccess(licenseId, grantee);
+    }
+
+    function testHasPrivateAccessReturnsTrueForGrantedAccounts() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "https://public.uri/metadata.json",
+            "https://private.uri/secret.json",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        address grantee = address(0x999);
+
+        // Initially no access
+        assertFalse(licenseToken.hasPrivateAccess(licenseId, grantee));
+
+        // Owner grants access
+        vm.prank(buyer);
+        licenseToken.grantPrivateAccess(licenseId, grantee);
+
+        // Now has access
+        assertTrue(licenseToken.hasPrivateAccess(licenseId, grantee));
+
+        // Owner revokes access
+        vm.prank(buyer);
+        licenseToken.revokePrivateAccess(licenseId, grantee);
+
+        // Access removed
+        assertFalse(licenseToken.hasPrivateAccess(licenseId, grantee));
+    }
+
+    function testHasPrivateAccessReturnsFalseForNonGrantedAccounts() public {
+        // Mint license
+        vm.prank(address(mockIPAsset));
+        uint256 licenseId = licenseToken.mintLicense(
+            buyer,
+            ipTokenId,
+            1,
+            "https://public.uri/metadata.json",
+            "https://private.uri/secret.json",
+            0,
+            "terms",
+            false,
+            0
+        );
+
+        address randomAccount = address(0x999);
+
+        // Random account has no access
+        assertFalse(licenseToken.hasPrivateAccess(licenseId, randomAccount));
+    }
+
     // ==================== Gas Optimization Check ====================
 
     function testQueryFunctionsGasOptimized() public {

@@ -24,6 +24,7 @@ contract LicenseToken is
     mapping(uint256 => License) public licenses;
     mapping(uint256 => bool) private _isExpired;
     mapping(uint256 => bool) private _hasExclusiveLicense;
+    mapping(uint256 => mapping(address => bool)) private _privateAccessGrants;
     uint256 private _licenseIdCounter;
     address public ipAssetContract;
 
@@ -151,14 +152,36 @@ contract LicenseToken is
     }
 
     function getPublicMetadata(uint256 licenseId) external view returns (string memory) {
-        return "";
+        return licenses[licenseId].publicMetadataURI;
     }
 
     function getPrivateMetadata(uint256 licenseId) external view returns (string memory) {
-        return "";
+        if (
+            balanceOf(msg.sender, licenseId) > 0 || _privateAccessGrants[licenseId][msg.sender]
+                || hasRole(DEFAULT_ADMIN_ROLE, msg.sender)
+        ) {
+            return licenses[licenseId].privateMetadataURI;
+        }
+        revert NotAuthorizedForPrivateMetadata();
     }
 
-    function grantPrivateAccess(uint256 licenseId, address account) external {}
+    function grantPrivateAccess(uint256 licenseId, address account) external {
+        if (balanceOf(msg.sender, licenseId) == 0) revert NotLicenseOwner();
+
+        _privateAccessGrants[licenseId][account] = true;
+        emit PrivateAccessGranted(licenseId, account);
+    }
+
+    function revokePrivateAccess(uint256 licenseId, address account) external {
+        if (balanceOf(msg.sender, licenseId) == 0) revert NotLicenseOwner();
+
+        _privateAccessGrants[licenseId][account] = false;
+        emit PrivateAccessRevoked(licenseId, account);
+    }
+
+    function hasPrivateAccess(uint256 licenseId, address account) external view returns (bool) {
+        return _privateAccessGrants[licenseId][account];
+    }
 
     function isRevoked(uint256 licenseId) external view returns (bool) {
         return licenses[licenseId].isRevoked;

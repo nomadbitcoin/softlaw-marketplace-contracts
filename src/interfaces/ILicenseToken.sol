@@ -120,6 +120,13 @@ interface ILicenseToken {
      */
     event PrivateAccessGranted(uint256 indexed licenseId, address indexed account);
 
+    /**
+     * @notice Emitted when private metadata access is revoked
+     * @param licenseId The license ID
+     * @param account The account whose access was revoked
+     */
+    event PrivateAccessRevoked(uint256 indexed licenseId, address indexed account);
+
     // ==================== FUNCTIONS ====================
 
     /**
@@ -218,6 +225,22 @@ interface ILicenseToken {
      * @param account The account to grant access to
      */
     function grantPrivateAccess(uint256 licenseId, address account) external;
+
+    /**
+     * @notice Revokes private metadata access from an account
+     * @dev Only license holder can revoke access
+     * @param licenseId The license ID
+     * @param account The account to revoke access from
+     */
+    function revokePrivateAccess(uint256 licenseId, address account) external;
+
+    /**
+     * @notice Checks if an account has been granted private metadata access
+     * @param licenseId The license ID
+     * @param account The account to check
+     * @return hasAccess Whether the account has been granted access
+     */
+    function hasPrivateAccess(uint256 licenseId, address account) external view returns (bool hasAccess);
 
     /**
      * @notice Checks if a license is revoked
