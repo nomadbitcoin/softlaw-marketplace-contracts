@@ -53,14 +53,12 @@ contract MarketplaceTest is Test {
     
     function setUp() public {
         vm.startPrank(admin);
-        
-        // Deploy contracts
+
         IPAsset ipAssetImpl = new IPAsset();
         LicenseToken licenseTokenImpl = new LicenseToken();
         Marketplace marketplaceImpl = new Marketplace();
         GovernanceArbitrator arbitratorImpl = new GovernanceArbitrator();
 
-        // Deploy proxies
         bytes memory ipAssetInitData = abi.encodeWithSelector(
             IPAsset.initialize.selector,
             "IP Asset",
@@ -89,7 +87,7 @@ contract MarketplaceTest is Test {
             Marketplace.initialize.selector,
             admin,
             address(revenueDistributor),
-            250, // 2.5% platform fee
+            250,
             treasury
         );
         ERC1967Proxy marketplaceProxy = new ERC1967Proxy(address(marketplaceImpl), marketplaceInitData);
@@ -113,8 +111,7 @@ contract MarketplaceTest is Test {
         licenseToken.grantRole(licenseToken.IP_ASSET_ROLE(), address(ipAsset));
         
         vm.stopPrank();
-        
-        // Setup test assets
+
         vm.prank(seller);
         ipTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
         
@@ -128,14 +125,11 @@ contract MarketplaceTest is Test {
             block.timestamp + 365 days,
             "worldwide",
             false, 0);
-        
-        // Give buyer some ETH
+
         vm.deal(buyer, 100 ether);
         vm.deal(other, 100 ether);
     }
-    
-    // ============ BR-003.1: Only asset owners MAY create listings ============
-    
+
     function testOwnerCanCreateListing() public {
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);
@@ -171,9 +165,7 @@ contract MarketplaceTest is Test {
             true
         );
     }
-    
-    // ============ BR-003.2: Listings MUST have a price greater than zero ============
-    
+
     function testCannotCreateListingWithZeroPrice() public {
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);
@@ -203,9 +195,7 @@ contract MarketplaceTest is Test {
         (,,,uint256 price,,) = marketplace.listings(listingId);
         assertEq(price, 1 ether);
     }
-    
-    // ============ BR-003.3: Only the seller MAY cancel a listing ============
-    
+
     function testSellerCanCancelListing() public {
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);
@@ -243,9 +233,7 @@ contract MarketplaceTest is Test {
         vm.expectRevert("Not the seller");
         marketplace.cancelListing(listingId);
     }
-    
-    // ============ BR-003.4: Anyone MAY create an offer for any asset ============
-    
+
     function testAnyoneCanCreateOffer() public {
         vm.prank(buyer);
         vm.expectEmit(true, true, false, true);
@@ -279,9 +267,7 @@ contract MarketplaceTest is Test {
         assertEq(offerBuyer, buyer);
         assertTrue(isActive);
     }
-    
-    // ============ BR-003.5: Offers MUST lock buyer funds in escrow ============
-    
+
     function testOfferLocksFundsInEscrow() public {
         uint256 buyerBalanceBefore = buyer.balance;
         
@@ -305,9 +291,7 @@ contract MarketplaceTest is Test {
             block.timestamp + 7 days
         );
     }
-    
-    // ============ BR-003.6: Only the asset owner MAY accept an offer ============
-    
+
     function testOwnerCanAcceptOffer() public {
         vm.prank(buyer);
         bytes32 offerId = marketplace.createOffer{value: 1 ether}(
@@ -339,9 +323,7 @@ contract MarketplaceTest is Test {
         vm.expectRevert("Not token owner");
         marketplace.acceptOffer(offerId);
     }
-    
-    // ============ BR-003.7: Expired offers MUST NOT be acceptable ============
-    
+
     function testCannotAcceptExpiredOffer() public {
         vm.prank(buyer);
         bytes32 offerId = marketplace.createOffer{value: 1 ether}(
@@ -379,9 +361,7 @@ contract MarketplaceTest is Test {
         
         assertEq(ipAsset.ownerOf(ipTokenId), buyer);
     }
-    
-    // ============ BR-003.8: Only the buyer MAY cancel their own offer ============
-    
+
     function testBuyerCanCancelOffer() public {
         vm.prank(buyer);
         bytes32 offerId = marketplace.createOffer{value: 1 ether}(
@@ -414,9 +394,7 @@ contract MarketplaceTest is Test {
         vm.expectRevert("Not the buyer");
         marketplace.cancelOffer(offerId);
     }
-    
-    // ============ Additional Marketplace Tests ============
-    
+
     function testBuyListing() public {
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);

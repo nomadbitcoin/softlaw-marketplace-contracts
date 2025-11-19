@@ -45,6 +45,60 @@ interface IMarketplace {
         uint256 expiryTime;
     }
 
+    /**
+     * @dev Recurring payment tracking for subscription licenses
+     * @param lastPaymentTime Timestamp of the last payment made
+     * @param currentOwner Current owner of the license (tracks transfers)
+     */
+    struct RecurringPayment {
+        uint256 lastPaymentTime;
+        address currentOwner;
+    }
+
+    // ==================== CUSTOM ERRORS ====================
+
+    /// @notice Thrown when price is zero or invalid
+    error InvalidPrice();
+
+    /// @notice Thrown when caller is not the token owner
+    error NotTokenOwner();
+
+    /// @notice Thrown when caller is not the seller
+    error NotSeller();
+
+    /// @notice Thrown when listing is not active
+    error ListingNotActive();
+
+    /// @notice Thrown when payment amount is insufficient
+    error InsufficientPayment();
+
+    /// @notice Thrown when caller is not the offer buyer
+    error NotOfferBuyer();
+
+    /// @notice Thrown when offer is not active
+    error OfferNotActive();
+
+    /// @notice Thrown when offer has expired
+    error OfferExpired();
+
+    /// @notice Thrown when operation requires recurring license but license is one-time
+    error NotRecurringLicense();
+
+    /// @notice Thrown when license is not active
+    error LicenseNotActive();
+
+    /// @notice Thrown when attempting revocation without sufficient missed payments
+    error InsufficientMissedPaymentsForRevocation();
+
+    /// @notice Thrown when license has been revoked for missed payments
+    error LicenseRevokedForMissedPayments();
+
+    /// @notice Thrown when penalty rate exceeds maximum allowed
+    error InvalidPenaltyRate();
+
+    /// @notice Thrown when native token transfer fails
+    error TransferFailed();
+
     // ==================== EVENTS ====================
 
     /**
@@ -115,6 +169,24 @@ interface IMarketplace {
         uint256 platformFee,
         uint256 royalty
     );
+
+    /**
+     * @notice Emitted when a recurring payment is made
+     * @param licenseId The license ID for the recurring payment
+     * @param payer Address making the payment
+     * @param baseAmount Base payment amount (without penalty)
+     * @param penalty Penalty amount for late payment
+     * @param timestamp Time of payment
+     */
+    event RecurringPaymentMade(
+        uint256 indexed licenseId, address indexed payer, uint256 baseAmount, uint256 penalty, uint256 timestamp
+    );
+
+    /**
+     * @notice Emitted when penalty rate is updated
+     * @param newRate New penalty rate in basis points per day
+     */
+    event PenaltyRateUpdated(uint256 newRate);
 
     // ==================== FUNCTIONS ====================
 

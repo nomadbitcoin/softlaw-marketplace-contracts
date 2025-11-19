@@ -2,19 +2,53 @@
 pragma solidity ^0.8.28;
 
 import "./interfaces/IMarketplace.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
-contract Marketplace is IMarketplace {
-    // State variables
+contract Marketplace is
+    IMarketplace,
+    Initializable,
+    UUPSUpgradeable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable
+{
+    uint256 public constant MAX_PENALTY_RATE = 1000;
+    uint256 public constant BASIS_POINTS = 10_000;
+
     mapping(bytes32 => Listing) public listings;
     mapping(bytes32 => Offer) public offers;
     mapping(bytes32 => uint256) public escrowBalances;
+    mapping(uint256 => RecurringPayment) public recurringPayments;
 
-    function initialize(
-        address admin,
-        address revenueDistributor,
-        uint256 platformFeeBasisPoints,
-        address treasury
-    ) external {}
+    address public revenueDistributor;
+    address public treasury;
+    uint256 public platformFeeBasisPoints;
+    uint256 public penaltyBasisPointsPerDay;
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address admin, address _revenueDistributor, uint256 _platformFeeBasisPoints, address _treasury)
+        external
+        initializer
+    {
+        __UUPSUpgradeable_init();
+        __AccessControl_init();
+        __Pausable_init();
+        __ReentrancyGuard_init();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+
+        revenueDistributor = _revenueDistributor;
+        platformFeeBasisPoints = _platformFeeBasisPoints;
+        treasury = _treasury;
+        penaltyBasisPointsPerDay = 0;
+    }
 
     function createListing(
         address nftContract,
@@ -70,7 +104,13 @@ contract Marketplace is IMarketplace {
         emit OfferCancelled(offerId);
     }
 
-    function pause() external {}
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
+    }
 
-    function unpause() external {}
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) { }
 }
