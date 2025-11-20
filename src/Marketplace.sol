@@ -97,43 +97,27 @@ contract Marketplace is
 
         listing.isActive = false;
 
-        if (!listing.isERC721) {
+        uint256 ipAssetId;
+        if (listing.isERC721) {
+            ipAssetId = listing.tokenId;
+        } else {
             uint256 paymentInterval = ILicenseToken(listing.nftContract).getPaymentInterval(listing.tokenId);
-
             if (paymentInterval > 0) {
                 recurringPayments[listing.tokenId] = RecurringPayment({
                     lastPaymentTime: block.timestamp,
                     currentOwner: msg.sender
                 });
             }
-        }
-
-        uint256 platformFee = (listing.price * platformFeeBasisPoints) / BASIS_POINTS;
-
-        if (listing.isERC721) {
-            IERC721(listing.nftContract).safeTransferFrom(listing.seller, msg.sender, listing.tokenId);
-        } else {
-            IERC1155(listing.nftContract).safeTransferFrom(listing.seller, msg.sender, listing.tokenId, 1, "");
-        }
-
-        uint256 sellerAmount = listing.price - platformFee;
-
-        uint256 ipAssetId;
-        if (listing.isERC721) {
-            ipAssetId = listing.tokenId;
-        } else {
             (ipAssetId,,,,,,,) = ILicenseToken(listing.nftContract).getLicenseInfo(listing.tokenId);
         }
 
-        IRevenueDistributor(revenueDistributor).distributePayment{value: sellerAmount}(ipAssetId, sellerAmount);
+        _transferNFT(listing.nftContract, listing.seller, msg.sender, listing.tokenId, listing.isERC721);
+        _distributePayment(ipAssetId, listing.price);
 
-        (bool success,) = treasury.call{value: platformFee}("");
-        if (!success) revert TransferFailed();
-
-        emit Sale(listingId, msg.sender, listing.seller, listing.price, platformFee, 0);
+        emit Sale(listingId, msg.sender, listing.seller, listing.price, (listing.price * platformFeeBasisPoints) / BASIS_POINTS, 0);
 
         if (msg.value > listing.price) {
-            (success,) = msg.sender.call{value: msg.value - listing.price}("");
+            (bool success,) = msg.sender.call{value: msg.value - listing.price}("");
             if (!success) revert TransferFailed();
         }
     }
@@ -142,7 +126,9 @@ contract Marketplace is
         address nftContract,
         uint256 tokenId,
         uint256 expiryTime
-    ) external payable returns (bytes32) {
+    ) external payable whenNotPaused returns (bytes32) {
+        if (msg.value == 0) revert InsufficientPayment();
+
         bytes32 offerId = keccak256(abi.encodePacked(nftContract, tokenId, msg.sender, block.timestamp));
         offers[offerId] = Offer({
             buyer: msg.sender,
@@ -157,12 +143,73 @@ contract Marketplace is
         return offerId;
     }
 
-    function acceptOffer(bytes32 offerId) external {
+    function acceptOffer(bytes32 offerId) external whenNotPaused nonReentrant {
+        Offer storage offer = offers[offerId];
+        if (!offer.isActive) revert OfferNotActive();
+        if (block.timestamp >= offer.expiryTime) revert OfferExpired();
+
+        offer.isActive = false;
+        escrowBalances[offerId] = 0;
+
+        bool isERC721;
+        try IERC721(offer.nftContract).supportsInterface(0x80ac58cd) returns (bool supported) {
+            isERC721 = supported;
+        } catch {
+            isERC721 = false;
+        }
+
+        uint256 ipAssetId;
+        if (isERC721) {
+            if (IERC721(offer.nftContract).ownerOf(offer.tokenId) != msg.sender) revert NotTokenOwner();
+            IERC721(offer.nftContract).safeTransferFrom(msg.sender, offer.buyer, offer.tokenId);
+            ipAssetId = offer.tokenId;
+        } else {
+            if (IERC1155(offer.nftContract).balanceOf(msg.sender, offer.tokenId) == 0) revert NotTokenOwner();
+            IERC1155(offer.nftContract).safeTransferFrom(msg.sender, offer.buyer, offer.tokenId, 1, "");
+            (ipAssetId,,,,,,,) = ILicenseToken(offer.nftContract).getLicenseInfo(offer.tokenId);
+        }
+
+        _distributePayment(ipAssetId, offer.price);
+
         emit OfferAccepted(offerId, msg.sender);
     }
 
+    function _transferNFT(
+        address nftContract,
+        address from,
+        address to,
+        uint256 tokenId,
+        bool isERC721
+    ) private {
+        if (isERC721) {
+            IERC721(nftContract).safeTransferFrom(from, to, tokenId);
+        } else {
+            IERC1155(nftContract).safeTransferFrom(from, to, tokenId, 1, "");
+        }
+    }
+
+    function _distributePayment(uint256 ipAssetId, uint256 totalAmount) private {
+        uint256 platformFee = (totalAmount * platformFeeBasisPoints) / BASIS_POINTS;
+        uint256 sellerAmount = totalAmount - platformFee;
+
+        IRevenueDistributor(revenueDistributor).distributePayment{value: sellerAmount}(ipAssetId, sellerAmount);
+
+        (bool success,) = treasury.call{value: platformFee}("");
+        if (!success) revert TransferFailed();
+    }
+
     function cancelOffer(bytes32 offerId) external {
-        offers[offerId].isActive = false;
+        Offer storage offer = offers[offerId];
+        if (!offer.isActive) revert OfferNotActive();
+        if (offer.buyer != msg.sender) revert NotOfferBuyer();
+
+        offer.isActive = false;
+        uint256 refundAmount = escrowBalances[offerId];
+        escrowBalances[offerId] = 0;
+
+        (bool success,) = msg.sender.call{value: refundAmount}("");
+        if (!success) revert TransferFailed();
+
         emit OfferCancelled(offerId);
     }
 
