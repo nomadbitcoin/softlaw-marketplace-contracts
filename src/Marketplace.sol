@@ -2,11 +2,15 @@
 pragma solidity ^0.8.28;
 
 import "./interfaces/IMarketplace.sol";
+import "./interfaces/ILicenseToken.sol";
+import "./interfaces/IRevenueDistributor.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
 contract Marketplace is
     IMarketplace,
@@ -55,7 +59,15 @@ contract Marketplace is
         uint256 tokenId,
         uint256 price,
         bool isERC721
-    ) external returns (bytes32) {
+    ) external whenNotPaused returns (bytes32) {
+        if (price == 0) revert InvalidPrice();
+
+        if (isERC721) {
+            if (IERC721(nftContract).ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+        } else {
+            if (IERC1155(nftContract).balanceOf(msg.sender, tokenId) == 0) revert NotTokenOwner();
+        }
+
         bytes32 listingId = keccak256(abi.encodePacked(nftContract, tokenId, msg.sender, block.timestamp));
         listings[listingId] = Listing({
             seller: msg.sender,
@@ -69,12 +81,62 @@ contract Marketplace is
         return listingId;
     }
 
-    function cancelListing(bytes32 listingId) external {
-        listings[listingId].isActive = false;
+    function cancelListing(bytes32 listingId) external whenNotPaused {
+        Listing storage listing = listings[listingId];
+        if (listing.seller != msg.sender) revert NotSeller();
+        if (!listing.isActive) revert ListingNotActive();
+
+        listing.isActive = false;
         emit ListingCancelled(listingId);
     }
 
-    function buyListing(bytes32 listingId) external payable {}
+    function buyListing(bytes32 listingId) external payable whenNotPaused nonReentrant {
+        Listing storage listing = listings[listingId];
+        if (!listing.isActive) revert ListingNotActive();
+        if (msg.value < listing.price) revert InsufficientPayment();
+
+        listing.isActive = false;
+
+        if (!listing.isERC721) {
+            uint256 paymentInterval = ILicenseToken(listing.nftContract).getPaymentInterval(listing.tokenId);
+
+            if (paymentInterval > 0) {
+                recurringPayments[listing.tokenId] = RecurringPayment({
+                    lastPaymentTime: block.timestamp,
+                    currentOwner: msg.sender
+                });
+            }
+        }
+
+        uint256 platformFee = (listing.price * platformFeeBasisPoints) / BASIS_POINTS;
+
+        if (listing.isERC721) {
+            IERC721(listing.nftContract).safeTransferFrom(listing.seller, msg.sender, listing.tokenId);
+        } else {
+            IERC1155(listing.nftContract).safeTransferFrom(listing.seller, msg.sender, listing.tokenId, 1, "");
+        }
+
+        uint256 sellerAmount = listing.price - platformFee;
+
+        uint256 ipAssetId;
+        if (listing.isERC721) {
+            ipAssetId = listing.tokenId;
+        } else {
+            (ipAssetId,,,,,,,) = ILicenseToken(listing.nftContract).getLicenseInfo(listing.tokenId);
+        }
+
+        IRevenueDistributor(revenueDistributor).distributePayment{value: sellerAmount}(ipAssetId, sellerAmount);
+
+        (bool success,) = treasury.call{value: platformFee}("");
+        if (!success) revert TransferFailed();
+
+        emit Sale(listingId, msg.sender, listing.seller, listing.price, platformFee, 0);
+
+        if (msg.value > listing.price) {
+            (success,) = msg.sender.call{value: msg.value - listing.price}("");
+            if (!success) revert TransferFailed();
+        }
+    }
 
     function createOffer(
         address nftContract,

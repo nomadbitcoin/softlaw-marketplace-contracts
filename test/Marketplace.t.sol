@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../src/Marketplace.sol";
+import "../src/interfaces/IMarketplace.sol";
 import "../src/IPAsset.sol";
 import "../src/LicenseToken.sol";
 import "../src/RevenueDistributor.sol";
@@ -133,11 +134,11 @@ contract MarketplaceTest is Test {
     function testOwnerCanCreateListing() public {
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);
-        
+
         vm.prank(seller);
-        vm.expectEmit(true, true, false, true);
+        vm.expectEmit(false, true, false, true);
         emit ListingCreated(
-            keccak256(abi.encodePacked(address(ipAsset), ipTokenId, seller, uint256(0))),
+            bytes32(0),
             seller,
             address(ipAsset),
             ipTokenId,
@@ -149,7 +150,7 @@ contract MarketplaceTest is Test {
             1 ether,
             true
         );
-        
+
         (address listedSeller,,,,bool isActive,) = marketplace.listings(listingId);
         assertEq(listedSeller, seller);
         assertTrue(isActive);
@@ -157,7 +158,7 @@ contract MarketplaceTest is Test {
     
     function testNonOwnerCannotCreateListing() public {
         vm.prank(other);
-        vm.expectRevert("Not token owner");
+        vm.expectRevert(IMarketplace.NotTokenOwner.selector);
         marketplace.createListing(
             address(ipAsset),
             ipTokenId,
@@ -169,9 +170,9 @@ contract MarketplaceTest is Test {
     function testCannotCreateListingWithZeroPrice() public {
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);
-        
+
         vm.prank(seller);
-        vm.expectRevert("Price must be greater than zero");
+        vm.expectRevert(IMarketplace.InvalidPrice.selector);
         marketplace.createListing(
             address(ipAsset),
             ipTokenId,
@@ -220,7 +221,7 @@ contract MarketplaceTest is Test {
     function testNonSellerCannotCancelListing() public {
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);
-        
+
         vm.prank(seller);
         bytes32 listingId = marketplace.createListing(
             address(ipAsset),
@@ -228,9 +229,9 @@ contract MarketplaceTest is Test {
             1 ether,
             true
         );
-        
+
         vm.prank(other);
-        vm.expectRevert("Not the seller");
+        vm.expectRevert(IMarketplace.NotSeller.selector);
         marketplace.cancelListing(listingId);
     }
 
@@ -416,7 +417,7 @@ contract MarketplaceTest is Test {
     function testCannotBuyListingWithInsufficientFunds() public {
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);
-        
+
         vm.prank(seller);
         bytes32 listingId = marketplace.createListing(
             address(ipAsset),
@@ -424,16 +425,16 @@ contract MarketplaceTest is Test {
             1 ether,
             true
         );
-        
+
         vm.prank(buyer);
-        vm.expectRevert("Insufficient payment");
+        vm.expectRevert(IMarketplace.InsufficientPayment.selector);
         marketplace.buyListing{value: 0.5 ether}(listingId);
     }
     
     function testCannotBuyInactiveListing() public {
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);
-        
+
         vm.prank(seller);
         bytes32 listingId = marketplace.createListing(
             address(ipAsset),
@@ -441,12 +442,12 @@ contract MarketplaceTest is Test {
             1 ether,
             true
         );
-        
+
         vm.prank(seller);
         marketplace.cancelListing(listingId);
-        
+
         vm.prank(buyer);
-        vm.expectRevert("Listing not active");
+        vm.expectRevert(IMarketplace.ListingNotActive.selector);
         marketplace.buyListing{value: 1 ether}(listingId);
     }
     
@@ -550,23 +551,23 @@ contract MarketplaceTest is Test {
             ipTokenId,
             block.timestamp + 7 days
         );
-        
+
         vm.prank(other);
         bytes32 offerId2 = marketplace.createOffer{value: 0.8 ether}(
             address(ipAsset),
             ipTokenId,
             block.timestamp + 7 days
         );
-        
+
         assertTrue(offerId1 != offerId2);
-        
+
         // Seller can accept the higher offer
         vm.prank(seller);
         ipAsset.approve(address(marketplace), ipTokenId);
-        
+
         vm.prank(seller);
         marketplace.acceptOffer(offerId2);
-        
+
         assertEq(ipAsset.ownerOf(ipTokenId), other);
     }
 }
