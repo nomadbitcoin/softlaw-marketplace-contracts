@@ -20,7 +20,7 @@ contract Marketplace is
     PausableUpgradeable,
     ReentrancyGuardUpgradeable
 {
-    uint256 public constant MAX_PENALTY_RATE = 500;
+    uint256 public constant MAX_PENALTY_RATE = 1000;
     uint256 public constant BASIS_POINTS = 10_000;
     uint256 public constant SECONDS_PER_MONTH = 2_592_000;
     uint256 public constant MAX_MISSED_PAYMENTS = 3;

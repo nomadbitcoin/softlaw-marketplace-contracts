@@ -1057,7 +1057,7 @@ contract MarketplaceTest is Test {
     function testCannotSetPenaltyRateAboveMax() public {
         vm.prank(admin);
         vm.expectRevert(IMarketplace.InvalidPenaltyRate.selector);
-        marketplace.setPenaltyRate(501);  // Max is 500 (5% per month)
+        marketplace.setPenaltyRate(1001);  // Max is 1000 (10% per month)
     }
 
 
@@ -1372,5 +1372,172 @@ contract MarketplaceTest is Test {
         assertLt(penaltyAt1Day, 0.01 ether); // Penalty for 1 day should be less than 1% of base (reasonable upper bound)
     }
 
+    // ==================== ADMIN FUNCTION TESTS ====================
+
+    function testAdminCanPause() public {
+        vm.prank(admin);
+        marketplace.pause();
+        assertTrue(marketplace.paused());
+    }
+
+    function testAdminCanUnpause() public {
+        vm.prank(admin);
+        marketplace.pause();
+
+        vm.prank(admin);
+        marketplace.unpause();
+        assertFalse(marketplace.paused());
+    }
+
+    function testNonAdminCannotPause() public {
+        vm.prank(other);
+        vm.expectRevert();
+        marketplace.pause();
+    }
+
+    function testPausePreventsListingCreation() public {
+        vm.prank(admin);
+        marketplace.pause();
+
+        vm.prank(seller);
+        ipAsset.approve(address(marketplace), ipTokenId);
+
+        vm.prank(seller);
+        vm.expectRevert();
+        marketplace.createListing(address(ipAsset), ipTokenId, 1 ether, true);
+    }
+
+    function testAdminCanSetPenaltyRate() public {
+        vm.prank(admin);
+        marketplace.setPenaltyRate(750);
+        assertEq(marketplace.penaltyBasisPointsPerMonth(), 750);
+    }
+
+    // ==================== UUPS UPGRADE TESTS ====================
+
+    function testNonAdminCannotUpgrade() public {
+        MarketplaceV2 newImpl = new MarketplaceV2();
+
+        vm.prank(other);
+        vm.expectRevert();
+        marketplace.upgradeToAndCall(address(newImpl), "");
+    }
+
+    function testUpgradePreservesListings() public {
+        vm.prank(seller);
+        ipAsset.approve(address(marketplace), ipTokenId);
+
+        vm.prank(seller);
+        bytes32 listingId = marketplace.createListing(address(ipAsset), ipTokenId, 1 ether, true);
+
+        (address sellerBefore, address nftBefore, uint256 tokenIdBefore, uint256 priceBefore, bool activeBefore, bool isERC721Before) = marketplace.listings(listingId);
+
+        MarketplaceV2 newImpl = new MarketplaceV2();
+        vm.prank(admin);
+        marketplace.upgradeToAndCall(address(newImpl), "");
+
+        MarketplaceV2 marketplaceV2 = MarketplaceV2(address(marketplace));
+        (address sellerAfter, address nftAfter, uint256 tokenIdAfter, uint256 priceAfter, bool activeAfter, bool isERC721After) = marketplaceV2.listings(listingId);
+
+        assertEq(sellerBefore, sellerAfter);
+        assertEq(nftBefore, nftAfter);
+        assertEq(tokenIdBefore, tokenIdAfter);
+        assertEq(priceBefore, priceAfter);
+        assertEq(activeBefore, activeAfter);
+        assertEq(isERC721Before, isERC721After);
+    }
+
+    function testUpgradePreservesOffers() public {
+        vm.prank(buyer);
+        bytes32 offerId = marketplace.createOffer{value: 1 ether}(
+            address(ipAsset),
+            ipTokenId,
+            block.timestamp + 7 days
+        );
+
+        (address buyerBefore, address nftBefore, uint256 tokenIdBefore, uint256 priceBefore, bool activeBefore, uint256 expiryBefore) = marketplace.offers(offerId);
+        uint256 escrowBefore = marketplace.escrow(offerId);
+
+        MarketplaceV2 newImpl = new MarketplaceV2();
+        vm.prank(admin);
+        marketplace.upgradeToAndCall(address(newImpl), "");
+
+        MarketplaceV2 marketplaceV2 = MarketplaceV2(address(marketplace));
+        (address buyerAfter, address nftAfter, uint256 tokenIdAfter, uint256 priceAfter, bool activeAfter, uint256 expiryAfter) = marketplaceV2.offers(offerId);
+        uint256 escrowAfter = marketplaceV2.escrow(offerId);
+
+        assertEq(buyerBefore, buyerAfter);
+        assertEq(nftBefore, nftAfter);
+        assertEq(tokenIdBefore, tokenIdAfter);
+        assertEq(priceBefore, priceAfter);
+        assertEq(activeBefore, activeAfter);
+        assertEq(expiryBefore, expiryAfter);
+        assertEq(escrowBefore, escrowAfter);
+    }
+
+    function testUpgradePreservesRecurringPayments() public {
+        vm.prank(seller);
+        uint256 recurringLicenseId = ipAsset.mintLicense(
+            ipTokenId,
+            seller,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            0,
+            "worldwide",
+            false,
+            30 days
+        );
+
+        vm.prank(seller);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(seller);
+        bytes32 listingId = marketplace.createListing(address(licenseToken), recurringLicenseId, 0.1 ether, false);
+
+        vm.prank(buyer);
+        marketplace.buyListing{value: 0.1 ether}(listingId);
+
+        (uint256 lastPaymentBefore, address ownerBefore, uint256 baseAmountBefore) = marketplace.recurring(recurringLicenseId);
+
+        MarketplaceV2 newImpl = new MarketplaceV2();
+        vm.prank(admin);
+        marketplace.upgradeToAndCall(address(newImpl), "");
+
+        MarketplaceV2 marketplaceV2 = MarketplaceV2(address(marketplace));
+        (uint256 lastPaymentAfter, address ownerAfter, uint256 baseAmountAfter) = marketplaceV2.recurring(recurringLicenseId);
+
+        assertEq(lastPaymentBefore, lastPaymentAfter);
+        assertEq(ownerBefore, ownerAfter);
+        assertEq(baseAmountBefore, baseAmountAfter);
+    }
+
+
+    function testUpgradedContractFunctional() public {
+        MarketplaceV2 newImpl = new MarketplaceV2();
+        vm.prank(admin);
+        marketplace.upgradeToAndCall(address(newImpl), "");
+
+        MarketplaceV2 marketplaceV2 = MarketplaceV2(address(marketplace));
+
+        vm.prank(seller);
+        ipAsset.approve(address(marketplaceV2), ipTokenId);
+
+        vm.prank(seller);
+        bytes32 listingId = marketplaceV2.createListing(address(ipAsset), ipTokenId, 1 ether, true);
+
+        vm.prank(buyer);
+        marketplaceV2.buyListing{value: 1 ether}(listingId);
+
+        assertEq(ipAsset.ownerOf(ipTokenId), buyer);
+
+        assertEq(marketplaceV2.newFeature(), "upgraded");
+    }
+}
+
+contract MarketplaceV2 is Marketplace {
+    function newFeature() external pure returns (string memory) {
+        return "upgraded";
+    }
 }
 
