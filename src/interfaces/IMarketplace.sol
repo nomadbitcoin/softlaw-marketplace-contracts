@@ -49,10 +49,12 @@ interface IMarketplace {
      * @dev Recurring payment tracking for subscription licenses
      * @param lastPaymentTime Timestamp of the last payment made
      * @param currentOwner Current owner of the license (tracks transfers)
+     * @param baseAmount Base payment amount for recurring payments
      */
     struct RecurringPayment {
         uint256 lastPaymentTime;
         address currentOwner;
+        uint256 baseAmount;
     }
 
     // ==================== CUSTOM ERRORS ====================
@@ -158,16 +160,12 @@ interface IMarketplace {
      * @param buyer Address of the buyer
      * @param seller Address of the seller
      * @param price Total sale price
-     * @param platformFee Fee paid to platform
-     * @param royalty Royalty paid to creators
      */
     event Sale(
         bytes32 indexed saleId,
         address indexed buyer,
         address indexed seller,
-        uint256 price,
-        uint256 platformFee,
-        uint256 royalty
+        uint256 price
     );
 
     /**
@@ -192,17 +190,13 @@ interface IMarketplace {
 
     /**
      * @notice Initializes the Marketplace contract (proxy pattern)
-     * @dev Sets up admin roles and fee configuration
+     * @dev Sets up admin roles. Platform fees are managed by RevenueDistributor.
      * @param admin Address to receive admin role
      * @param revenueDistributor Address of RevenueDistributor contract
-     * @param platformFeeBasisPoints Platform fee in basis points (e.g., 250 = 2.5%)
-     * @param treasury Address to receive platform fees
      */
     function initialize(
         address admin,
-        address revenueDistributor,
-        uint256 platformFeeBasisPoints,
-        address treasury
+        address revenueDistributor
     ) external;
 
     /**
@@ -274,4 +268,62 @@ interface IMarketplace {
      * @dev Only callable by PAUSER_ROLE
      */
     function unpause() external;
+
+    /**
+     * @notice Sets the penalty rate for late recurring payments
+     * @dev Only callable by admin. Penalty is calculated pro-rata per second.
+     * @param basisPoints Penalty rate in basis points per month (e.g., 500 = 5% per month)
+     */
+    function setPenaltyRate(uint256 basisPoints) external;
+
+    /**
+     * @notice Calculates the number of missed payments for a recurring license
+     * @dev Returns 0 for ONE_TIME licenses
+     * @param licenseContract Address of the license token contract
+     * @param licenseId The license ID to check
+     * @return missedPayments Number of missed payment periods
+     */
+    function getMissedPayments(address licenseContract, uint256 licenseId)
+        external
+        view
+        returns (uint256 missedPayments);
+
+
+    /**
+     * @notice Makes a recurring payment for a subscription license
+     * @dev Calculates penalty for late payments, auto-revokes after 3 missed payments
+     * @param licenseContract Address of the license token contract
+     * @param licenseId The license ID to pay for
+     */
+    function makeRecurringPayment(address licenseContract, uint256 licenseId) external payable;
+
+    /**
+     * @notice Gets the base amount for a recurring payment
+     * @param licenseId The license ID
+     * @return baseAmount The base payment amount (without penalty)
+     */
+    function getRecurringPaymentAmount(uint256 licenseId) external view returns (uint256 baseAmount);
+
+    /**
+     * @notice Calculates the current penalty for late payment
+     * @dev Returns 0 if payment is not overdue or for ONE_TIME licenses
+     * @param licenseContract Address of the license token contract
+     * @param licenseId The license ID
+     * @return penalty Penalty amount in wei
+     */
+    function calculatePenalty(address licenseContract, uint256 licenseId) external view returns (uint256 penalty);
+
+    /**
+     * @notice Gets the total amount due for next recurring payment (base + penalty)
+     * @dev Useful for frontends to know exact amount before creating transaction
+     * @param licenseContract Address of the license token contract
+     * @param licenseId The license ID
+     * @return baseAmount The base payment amount
+     * @return penalty The penalty amount if overdue
+     * @return total The total amount due (baseAmount + penalty)
+     */
+    function getTotalPaymentDue(address licenseContract, uint256 licenseId)
+        external
+        view
+        returns (uint256 baseAmount, uint256 penalty, uint256 total);
 }

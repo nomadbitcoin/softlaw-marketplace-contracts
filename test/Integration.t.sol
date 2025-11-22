@@ -343,7 +343,7 @@ contract IntegrationTest is Test {
         );
         
         // 3. Verify funds are escrowed
-        assertEq(marketplace.escrowBalances(offerId), 5 ether);
+        assertEq(marketplace.escrow(offerId), 5 ether);
         
         // 4. Creator accepts offer
         vm.prank(creator);
