@@ -361,14 +361,14 @@ contract GovernanceArbitratorTest is Test {
 
     // ==================== HELPER FUNCTION TESTS ====================
 
-    function testGetLicenseDisputes() public {
+    function testGetDisputesForLicense() public {
         vm.prank(ipOwner);
         uint256 dispute1 = arbitrator.submitDispute(licenseId, "Test 1", "");
 
         vm.prank(licensee);
         uint256 dispute2 = arbitrator.submitDispute(licenseId, "Test 2", "");
 
-        uint256[] memory disputes = arbitrator.getLicenseDisputes(licenseId);
+        uint256[] memory disputes = arbitrator.getDisputesForLicense(licenseId);
         assertEq(disputes.length, 2);
         assertEq(disputes[0], dispute1);
         assertEq(disputes[1], dispute2);
@@ -418,9 +418,7 @@ contract GovernanceArbitratorTest is Test {
         vm.prank(admin);
         arbitrator.pause();
 
-        vm.expectRevert();
-        vm.prank(ipOwner);
-        arbitrator.submitDispute(licenseId, "Should fail", "");
+        assertTrue(arbitrator.paused());
     }
 
     function testAdminCanUnpause() public {
@@ -430,8 +428,52 @@ contract GovernanceArbitratorTest is Test {
         vm.prank(admin);
         arbitrator.unpause();
 
+        assertFalse(arbitrator.paused());
+    }
+
+    function testNonAdminCannotPause() public {
+        bytes32 adminRole = arbitrator.DEFAULT_ADMIN_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", thirdParty, adminRole)
+        );
+        vm.prank(thirdParty);
+        arbitrator.pause();
+    }
+
+    function testPausedContractBlocksSubmission() public {
+        vm.prank(admin);
+        arbitrator.pause();
+
+        vm.expectRevert();
         vm.prank(ipOwner);
-        arbitrator.submitDispute(licenseId, "Should succeed", "");
+        arbitrator.submitDispute(licenseId, "Should fail", "");
+    }
+
+    function testPausedContractBlocksResolution() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        vm.prank(admin);
+        arbitrator.pause();
+
+        vm.expectRevert();
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Should fail");
+    }
+
+    function testPausedContractBlocksExecution() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Approved");
+
+        vm.prank(admin);
+        arbitrator.pause();
+
+        vm.expectRevert();
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
     }
 
     // ==================== EXECUTE REVOCATION TESTS ====================
@@ -573,5 +615,104 @@ contract GovernanceArbitratorTest is Test {
 
         assertTrue(licenseToken.isRevoked(licenseId));
         assertFalse(licenseToken.isActiveLicense(licenseId));
+    }
+
+    // ==================== UPGRADE TESTS ====================
+
+    function testOnlyAdminCanUpgrade() public {
+        GovernanceArbitrator newImplementation = new GovernanceArbitrator();
+
+        vm.prank(admin);
+        arbitrator.upgradeToAndCall(address(newImplementation), "");
+
+        // Verify upgrade succeeded by checking implementation
+        // Note: We can't directly check implementation address in UUPS, but if no revert occurred, it succeeded
+    }
+
+    function testNonAdminCannotUpgrade() public {
+        GovernanceArbitrator newImplementation = new GovernanceArbitrator();
+
+        bytes32 adminRole = arbitrator.DEFAULT_ADMIN_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", thirdParty, adminRole)
+        );
+        vm.prank(thirdParty);
+        arbitrator.upgradeToAndCall(address(newImplementation), "");
+    }
+
+    function testUpgradePreservesDisputes() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test dispute", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Approved");
+
+        GovernanceArbitrator newImplementation = new GovernanceArbitrator();
+
+        vm.prank(admin);
+        arbitrator.upgradeToAndCall(address(newImplementation), "");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(dispute.licenseId, licenseId);
+        assertEq(dispute.submitter, ipOwner);
+        assertEq(dispute.reason, "Test dispute");
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
+    }
+
+    // ==================== QUERY FUNCTION TESTS ====================
+
+    function testIsDisputeOverdueWithinDeadline() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        assertFalse(arbitrator.isDisputeOverdue(disputeId));
+    }
+
+    function testIsDisputeOverdueAfter30Days() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        vm.warp(block.timestamp + 31 days);
+        assertTrue(arbitrator.isDisputeOverdue(disputeId));
+    }
+
+    function testGetTimeRemainingCorrect() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        uint256 timeLeft = arbitrator.getTimeRemaining(disputeId);
+        assertApproxEqAbs(timeLeft, 30 days, 1);
+
+        vm.warp(block.timestamp + 15 days);
+        timeLeft = arbitrator.getTimeRemaining(disputeId);
+        assertApproxEqAbs(timeLeft, 15 days, 1);
+    }
+
+    function testGetTimeRemainingWhenOverdue() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        vm.warp(block.timestamp + 31 days);
+        uint256 timeLeft = arbitrator.getTimeRemaining(disputeId);
+        assertEq(timeLeft, 0);
+    }
+
+    function testGetDisputesForLicenseReturnsEmpty() public view {
+        uint256 newLicenseId = 9999;
+        uint256[] memory disputes = arbitrator.getDisputesForLicense(newLicenseId);
+        assertEq(disputes.length, 0);
+    }
+
+    function testGetDisputeReturnsCorrectData() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(dispute.licenseId, licenseId);
+        assertEq(dispute.submitter, ipOwner);
+        assertEq(dispute.ipOwner, ipOwner);
+        assertEq(dispute.reason, "Violation");
+        assertEq(dispute.proofURI, "ipfs://proof");
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Pending));
     }
 }

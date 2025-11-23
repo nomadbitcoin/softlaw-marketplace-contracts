@@ -108,14 +108,6 @@ interface IGovernanceArbitrator {
      */
     event LicenseRevoked(uint256 indexed licenseId, uint256 indexed disputeId);
 
-    /**
-     * @notice Emitted when a dispute resolution deadline is exceeded
-     * @param disputeId The overdue dispute
-     * @param submittedAt When the dispute was submitted
-     * @param deadlineAt When the deadline was
-     */
-    event DisputeOverdue(uint256 indexed disputeId, uint256 submittedAt, uint256 deadlineAt);
-
     // ==================== FUNCTIONS ====================
 
     /**
@@ -179,7 +171,7 @@ interface IGovernanceArbitrator {
      * @param licenseId The license ID
      * @return disputeIds Array of dispute IDs
      */
-    function getLicenseDisputes(uint256 licenseId) external view returns (uint256[] memory disputeIds);
+    function getDisputesForLicense(uint256 licenseId) external view returns (uint256[] memory disputeIds);
 
     /**
      * @notice Checks if a dispute is overdue (past 30-day deadline)

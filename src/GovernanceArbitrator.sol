@@ -151,14 +151,17 @@ contract GovernanceArbitrator is
         return disputes[disputeId];
     }
 
-    function getLicenseDisputes(uint256 licenseId) external view returns (uint256[] memory disputeIds) {
+    function getDisputesForLicense(uint256 licenseId) external view returns (uint256[] memory disputeIds) {
         return _licenseDisputes[licenseId];
     }
 
     function isDisputeOverdue(uint256 disputeId) external view returns (bool overdue) {
         Dispute memory dispute = disputes[disputeId];
-        if (dispute.status != DisputeStatus.Pending) return false;
-        return block.timestamp > dispute.submittedAt + RESOLUTION_DEADLINE;
+        bool isOverdue =
+            dispute.status == DisputeStatus.Pending &&
+            block.timestamp > dispute.submittedAt + RESOLUTION_DEADLINE;
+
+        return isOverdue;
     }
 
     function getTimeRemaining(uint256 disputeId) external view returns (uint256 timeRemaining) {
