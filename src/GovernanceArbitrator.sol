@@ -132,7 +132,7 @@ contract GovernanceArbitrator is
         emit DisputeResolved(disputeId, approve, msg.sender, resolutionReason);
     }
 
-    function executeRevocation(uint256 disputeId) external whenNotPaused {
+    function executeRevocation(uint256 disputeId) external onlyRole(ARBITRATOR_ROLE) whenNotPaused {
         Dispute storage dispute = disputes[disputeId];
 
         if (dispute.status != DisputeStatus.Approved) revert DisputeNotApproved();

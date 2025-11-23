@@ -433,4 +433,145 @@ contract GovernanceArbitratorTest is Test {
         vm.prank(ipOwner);
         arbitrator.submitDispute(licenseId, "Should succeed", "");
     }
+
+    // ==================== EXECUTE REVOCATION TESTS ====================
+
+    function testApprovedDisputeCanBeExecuted() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
+
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Executed));
+    }
+
+    function testExecutionRevokesLicense() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
+
+        assertFalse(licenseToken.isRevoked(licenseId));
+
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
+
+        assertTrue(licenseToken.isRevoked(licenseId));
+    }
+
+    function testExecutionUpdatesStatusToExecuted() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
+
+        IGovernanceArbitrator.Dispute memory disputeBefore = arbitrator.getDispute(disputeId);
+        assertEq(uint256(disputeBefore.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
+
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
+
+        IGovernanceArbitrator.Dispute memory disputeAfter = arbitrator.getDispute(disputeId);
+        assertEq(uint256(disputeAfter.status), uint256(IGovernanceArbitrator.DisputeStatus.Executed));
+    }
+
+    function testRevokedLicenseIsPermanent() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
+
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
+
+        assertTrue(licenseToken.isRevoked(licenseId));
+        assertFalse(licenseToken.isActiveLicense(licenseId));
+    }
+
+    function testCannotExecuteRejectedDispute() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, false, "No evidence");
+
+        vm.expectRevert(IGovernanceArbitrator.DisputeNotApproved.selector);
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
+    }
+
+    function testCannotExecutePendingDispute() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.expectRevert(IGovernanceArbitrator.DisputeNotApproved.selector);
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
+    }
+
+    function testOnlyArbitratorCanExecuteRevocation() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
+
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
+
+        assertTrue(licenseToken.isRevoked(licenseId));
+    }
+
+    function testNonArbitratorCannotExecuteRevocation() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
+
+        bytes32 arbitratorRoleHash = arbitrator.ARBITRATOR_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", thirdParty, arbitratorRoleHash
+            )
+        );
+        vm.prank(thirdParty);
+        arbitrator.executeRevocation(disputeId);
+    }
+
+    function testExecutionEmitsLicenseRevokedEvent() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
+
+        vm.expectEmit(true, true, false, false);
+        emit LicenseRevoked(licenseId, disputeId);
+
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
+    }
+
+    function testRevokedLicenseCannotBeUsedInMarketplace() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
+
+        vm.prank(arbitratorRole);
+        arbitrator.executeRevocation(disputeId);
+
+        assertTrue(licenseToken.isRevoked(licenseId));
+        assertFalse(licenseToken.isActiveLicense(licenseId));
+    }
 }
