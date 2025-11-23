@@ -245,7 +245,7 @@ contract IntegrationTest is Test {
         
         // 6. Verify revoked license cannot be transferred
         vm.prank(licensee);
-        vm.expectRevert("License revoked");
+        vm.expectRevert(ILicenseToken.CannotTransferRevokedLicense.selector);
         licenseToken.safeTransferFrom(licensee, buyer, licenseId, 1, "");
     }
     
@@ -323,7 +323,7 @@ contract IntegrationTest is Test {
         
         // 5. Original licensee can no longer access private metadata
         vm.prank(licensee);
-        vm.expectRevert("Not authorized to access private metadata");
+        vm.expectRevert(ILicenseToken.NotAuthorizedForPrivateMetadata.selector);
         licenseToken.getPrivateMetadata(licenseId);
     }
     
@@ -376,34 +376,25 @@ contract IntegrationTest is Test {
         
         // 2. Cannot burn with active license
         vm.prank(creator);
-        vm.expectRevert("Cannot burn: active licenses exist");
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveLicenses.selector, ipTokenId, 1));
         ipAsset.burn(ipTokenId);
-        
+
         // 3. Submit dispute
         vm.prank(creator);
         uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "");
-        
-        // 4. Revoke license
+
+        // 4. Revoke license (which also clears dispute flag since no other pending disputes)
         vm.prank(arbitratorRole);
         arbitrator.resolveDispute(disputeId, true, "Approved");
-        
+
         vm.prank(arbitratorRole);
         arbitrator.executeRevocation(disputeId);
-        
-        // 5. Still cannot burn (active dispute)
-        vm.prank(creator);
-        vm.expectRevert("Cannot burn: active dispute");
-        ipAsset.burn(ipTokenId);
-        
-        // 6. Resolve dispute
-        // (In real implementation, dispute would be marked as resolved)
-        vm.prank(address(arbitrator));
-        ipAsset.setDisputeStatus(ipTokenId, false);
-        
-        // 7. Now can burn
+
+        // 5. License revoked and dispute flag cleared, so now can burn
         vm.prank(creator);
         ipAsset.burn(ipTokenId);
-        
+
+        // 6. Verify IP asset was burned
         vm.expectRevert();
         ipAsset.ownerOf(ipTokenId);
     }

@@ -492,7 +492,7 @@ contract IPAssetTest is Test {
         );
 
         assertEq(licenseId, 0); // Phase 1 returns placeholder
-        assertEq(ipAsset.activeLicenseCount(tokenId), 1);
+        assertEq(ipAsset.activeLicenseCount(tokenId), 5); // Count tracks supply
         vm.stopPrank();
     }
 
@@ -521,12 +521,12 @@ contract IPAssetTest is Test {
         assertEq(ipAsset.activeLicenseCount(tokenId), 0);
 
         ipAsset.mintLicense(tokenId, licensee, 5, "ipfs://public", "ipfs://private", block.timestamp + 365 days, "License 1", false, 0);
-        assertEq(ipAsset.activeLicenseCount(tokenId), 1);
+        assertEq(ipAsset.activeLicenseCount(tokenId), 5);
 
-        ipAsset.mintLicense(tokenId, other, 3, "ipfs://public2", "ipfs://private2", block.timestamp + 365 days, "License 2", true, 0);
-        assertEq(ipAsset.activeLicenseCount(tokenId), 2);
+        ipAsset.mintLicense(tokenId, other, 3, "ipfs://public2", "ipfs://private2", block.timestamp + 365 days, "License 2", false, 0);
+        assertEq(ipAsset.activeLicenseCount(tokenId), 8);
 
-        vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveLicenses.selector, tokenId, 2));
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.HasActiveLicenses.selector, tokenId, 8));
         ipAsset.burn(tokenId);
 
         vm.stopPrank();
