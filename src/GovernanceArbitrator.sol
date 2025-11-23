@@ -2,94 +2,183 @@
 pragma solidity ^0.8.28;
 
 import "./interfaces/IGovernanceArbitrator.sol";
+import "./interfaces/ILicenseToken.sol";
+import "./interfaces/IIPAsset.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-contract GovernanceArbitrator is IGovernanceArbitrator {
-    // State variables
+contract GovernanceArbitrator is
+    IGovernanceArbitrator,
+    Initializable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable
+{
+    bytes32 public constant ARBITRATOR_ROLE = keccak256("ARBITRATOR_ROLE");
+    uint256 public constant RESOLUTION_DEADLINE = 30 days;
+
+    address public licenseTokenContract;
+    address public ipAssetContract;
+    address public revenueDistributorContract;
+
     uint256 private _disputeIdCounter;
-
     mapping(uint256 => Dispute) public disputes;
     mapping(uint256 => uint256[]) private _licenseDisputes;
 
-    /// @notice Role for arbitrators who can resolve disputes
-    bytes32 public constant ARBITRATOR_ROLE = keccak256("ARBITRATOR_ROLE");
-
-    /// @notice Maximum time allowed for dispute resolution (30 days)
-    uint256 public constant RESOLUTION_DEADLINE = 30 days;
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(
         address admin,
         address licenseToken,
         address ipAsset,
         address revenueDistributor
-    ) external {}
+    ) external initializer {
+        __AccessControl_init();
+        __Pausable_init();
+        __UUPSUpgradeable_init();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(ARBITRATOR_ROLE, admin);
+
+        licenseTokenContract = licenseToken;
+        ipAssetContract = ipAsset;
+        revenueDistributorContract = revenueDistributor;
+    }
 
     function submitDispute(
         uint256 licenseId,
         string memory reason,
         string memory proofURI
-    ) external returns (uint256) {
+    ) external whenNotPaused returns (uint256) {
+        if (bytes(reason).length == 0) revert EmptyReason();
+
+        ILicenseToken licenseToken = ILicenseToken(licenseTokenContract);
+
+        if (!licenseToken.isActiveLicense(licenseId)) {
+            revert LicenseNotActive();
+        }
+
+        (uint256 ipAssetId,,,,,,,) = licenseToken.getLicenseInfo(licenseId);
+
+        IIPAsset ipAsset = IIPAsset(ipAssetContract);
+        address ipOwner = IERC721(ipAssetContract).ownerOf(ipAssetId);
+
         uint256 disputeId = _disputeIdCounter++;
+
         disputes[disputeId] = Dispute({
             licenseId: licenseId,
             submitter: msg.sender,
-            submittedAt: block.timestamp,
+            ipOwner: ipOwner,
             reason: reason,
             proofURI: proofURI,
-            resolutionReason: "",
             status: DisputeStatus.Pending,
-            resolver: address(0),
+            submittedAt: block.timestamp,
             resolvedAt: 0,
-            executed: false
+            resolver: address(0),
+            resolutionReason: ""
         });
+
         _licenseDisputes[licenseId].push(disputeId);
+
+        ipAsset.setDisputeStatus(ipAssetId, true);
+
         emit DisputeSubmitted(disputeId, licenseId, msg.sender, reason);
         return disputeId;
     }
 
     function resolveDispute(
         uint256 disputeId,
-        bool approved,
+        bool approve,
         string memory resolutionReason
-    ) external {
-        DisputeStatus newStatus = approved ? DisputeStatus.Approved : DisputeStatus.Rejected;
-        disputes[disputeId].status = newStatus;
-        disputes[disputeId].resolver = msg.sender;
-        disputes[disputeId].resolvedAt = block.timestamp;
-        disputes[disputeId].resolutionReason = resolutionReason;
-        emit DisputeResolved(disputeId, approved, msg.sender, resolutionReason);
+    ) external onlyRole(ARBITRATOR_ROLE) whenNotPaused {
+        Dispute storage dispute = disputes[disputeId];
+
+        if (dispute.status != DisputeStatus.Pending) revert DisputeAlreadyResolved();
+
+        if (this.isDisputeOverdue(disputeId)) {
+            revert DisputeResolutionOverdue();
+        }
+
+        dispute.status = approve ? DisputeStatus.Approved : DisputeStatus.Rejected;
+        dispute.resolver = msg.sender;
+        dispute.resolvedAt = block.timestamp;
+        dispute.resolutionReason = resolutionReason;
+
+        ILicenseToken licenseToken = ILicenseToken(licenseTokenContract);
+        (uint256 ipAssetId,,,,,,,) = licenseToken.getLicenseInfo(dispute.licenseId);
+
+        uint256[] memory licenseDisputeIds = _licenseDisputes[dispute.licenseId];
+
+        bool hasOtherPending = false;
+        for (uint256 i = 0; i < licenseDisputeIds.length; i++) {
+            if (
+                licenseDisputeIds[i] != disputeId &&
+                disputes[licenseDisputeIds[i]].status == DisputeStatus.Pending
+            ) {
+                hasOtherPending = true;
+                break;
+            }
+        }
+
+        if (!hasOtherPending) {
+            IIPAsset(ipAssetContract).setDisputeStatus(ipAssetId, false);
+        }
+
+        emit DisputeResolved(disputeId, approve, msg.sender, resolutionReason);
     }
 
-    function executeRevocation(uint256 disputeId) external {
-        disputes[disputeId].executed = true;
-        emit LicenseRevoked(disputes[disputeId].licenseId, disputeId);
+    function executeRevocation(uint256 disputeId) external whenNotPaused {
+        Dispute storage dispute = disputes[disputeId];
+
+        if (dispute.status != DisputeStatus.Approved) revert DisputeNotApproved();
+
+        dispute.status = DisputeStatus.Executed;
+
+        ILicenseToken(licenseTokenContract).revokeLicense(
+            dispute.licenseId,
+            dispute.resolutionReason
+        );
+
+        emit LicenseRevoked(dispute.licenseId, disputeId);
     }
 
-    function getDispute(uint256 disputeId) external view returns (Dispute memory) {
+    function getDispute(uint256 disputeId) external view returns (Dispute memory dispute) {
         return disputes[disputeId];
     }
 
-    function getDisputesForLicense(uint256 licenseId) external view returns (uint256[] memory) {
+    function getLicenseDisputes(uint256 licenseId) external view returns (uint256[] memory disputeIds) {
         return _licenseDisputes[licenseId];
     }
 
-    function isDisputeOverdue(uint256 disputeId) external view returns (bool) {
-        return block.timestamp > disputes[disputeId].submittedAt + RESOLUTION_DEADLINE;
+    function isDisputeOverdue(uint256 disputeId) external view returns (bool overdue) {
+        Dispute memory dispute = disputes[disputeId];
+        if (dispute.status != DisputeStatus.Pending) return false;
+        return block.timestamp > dispute.submittedAt + RESOLUTION_DEADLINE;
     }
 
-    function getTimeRemaining(uint256 disputeId) external view returns (uint256) {
-        uint256 deadline = disputes[disputeId].submittedAt + RESOLUTION_DEADLINE;
+    function getTimeRemaining(uint256 disputeId) external view returns (uint256 timeRemaining) {
+        Dispute memory dispute = disputes[disputeId];
+        uint256 deadline = dispute.submittedAt + RESOLUTION_DEADLINE;
         if (block.timestamp >= deadline) return 0;
         return deadline - block.timestamp;
     }
 
-    function getOverdueDisputes() external view returns (uint256[] memory) {
-        uint256[] memory empty;
-        return empty;
+    function getDisputeCount() external view returns (uint256 count) {
+        return _disputeIdCounter;
     }
 
-    function grantRole(bytes32 role, address account) external {}
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
+    }
 
-    function pause() external {}
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
 
-    function unpause() external {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 }

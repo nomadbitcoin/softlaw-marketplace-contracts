@@ -26,30 +26,50 @@ interface IGovernanceArbitrator {
     // ==================== STRUCTS ====================
 
     /**
-     * @dev Dispute information
+     * @dev Complete dispute information
      * @param licenseId The license being disputed
-     * @param submitter Address that submitted the dispute
-     * @param submittedAt Timestamp of dispute submission
-     * @param reason Human-readable dispute reason
-     * @param proofURI URI pointing to evidence/proof
-     * @param resolutionReason Arbitrator's resolution reasoning
+     * @param submitter Address that submitted the dispute (BR-005.1: any party)
+     * @param ipOwner IP asset owner (cached from license data)
+     * @param reason Human-readable dispute reason (BR-005.3: required)
+     * @param proofURI Optional URI to supporting evidence (BR-005.1: optional)
      * @param status Current dispute status
-     * @param resolver Address that resolved the dispute
-     * @param resolvedAt Timestamp of resolution
-     * @param executed Whether revocation has been executed
+     * @param submittedAt Timestamp when dispute was submitted
+     * @param resolvedAt Timestamp when dispute was resolved (0 if pending)
+     * @param resolver Address of arbitrator who resolved the dispute
+     * @param resolutionReason Human-readable resolution explanation
      */
     struct Dispute {
         uint256 licenseId;
         address submitter;
-        uint256 submittedAt;
+        address ipOwner;
         string reason;
         string proofURI;
-        string resolutionReason;
         DisputeStatus status;
-        address resolver;
+        uint256 submittedAt;
         uint256 resolvedAt;
-        bool executed;
+        address resolver;
+        string resolutionReason;
     }
+
+    // ==================== CUSTOM ERRORS ====================
+
+    /// @notice Thrown when dispute reason is empty (BR-005.3)
+    error EmptyReason();
+
+    /// @notice Thrown when attempting to dispute an inactive license (BR-005.2)
+    error LicenseNotActive();
+
+    /// @notice Thrown when attempting to resolve an already resolved dispute
+    error DisputeAlreadyResolved();
+
+    /// @notice Thrown when attempting to resolve a dispute after 30-day deadline (BR-005.8)
+    error DisputeResolutionOverdue();
+
+    /// @notice Thrown when attempting to execute a dispute that is not approved
+    error DisputeNotApproved();
+
+    /// @notice Thrown when caller does not have ARBITRATOR_ROLE
+    error NotArbitrator();
 
     // ==================== EVENTS ====================
 
@@ -89,11 +109,12 @@ interface IGovernanceArbitrator {
     event LicenseRevoked(uint256 indexed licenseId, uint256 indexed disputeId);
 
     /**
-     * @notice Emitted when a dispute becomes overdue
+     * @notice Emitted when a dispute resolution deadline is exceeded
      * @param disputeId The overdue dispute
-     * @param daysOverdue Number of days past deadline
+     * @param submittedAt When the dispute was submitted
+     * @param deadlineAt When the deadline was
      */
-    event DisputeOverdue(uint256 indexed disputeId, uint256 daysOverdue);
+    event DisputeOverdue(uint256 indexed disputeId, uint256 submittedAt, uint256 deadlineAt);
 
     // ==================== FUNCTIONS ====================
 
@@ -154,11 +175,11 @@ interface IGovernanceArbitrator {
     function getDispute(uint256 disputeId) external view returns (Dispute memory dispute);
 
     /**
-     * @notice Gets all disputes for a specific license
+     * @notice Gets all dispute IDs for a specific license
      * @param licenseId The license ID
      * @return disputeIds Array of dispute IDs
      */
-    function getDisputesForLicense(uint256 licenseId) external view returns (uint256[] memory disputeIds);
+    function getLicenseDisputes(uint256 licenseId) external view returns (uint256[] memory disputeIds);
 
     /**
      * @notice Checks if a dispute is overdue (past 30-day deadline)
@@ -175,28 +196,20 @@ interface IGovernanceArbitrator {
     function getTimeRemaining(uint256 disputeId) external view returns (uint256 timeRemaining);
 
     /**
-     * @notice Gets all overdue disputes
-     * @return disputeIds Array of overdue dispute IDs
+     * @notice Gets the total number of disputes submitted
+     * @return count Total dispute count
      */
-    function getOverdueDisputes() external view returns (uint256[] memory disputeIds);
-
-    /**
-     * @notice Grants a role to an account
-     * @dev Only callable by role admin
-     * @param role The role identifier
-     * @param account The account to grant the role to
-     */
-    function grantRole(bytes32 role, address account) external;
+    function getDisputeCount() external view returns (uint256 count);
 
     /**
      * @notice Pauses dispute submissions
-     * @dev Only callable by PAUSER_ROLE
+     * @dev Only callable by DEFAULT_ADMIN_ROLE
      */
     function pause() external;
 
     /**
      * @notice Unpauses dispute submissions
-     * @dev Only callable by PAUSER_ROLE
+     * @dev Only callable by DEFAULT_ADMIN_ROLE
      */
     function unpause() external;
 }

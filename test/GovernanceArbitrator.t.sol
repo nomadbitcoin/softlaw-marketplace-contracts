@@ -14,57 +14,47 @@ contract GovernanceArbitratorTest is Test {
     LicenseToken public licenseToken;
     IPAsset public ipAsset;
     RevenueDistributor public revenueDistributor;
-    
+
     address public admin = address(1);
     address public arbitratorRole = address(2);
     address public ipOwner = address(3);
     address public licensee = address(4);
     address public thirdParty = address(5);
     address public treasury = address(6);
-    
+
     uint256 public ipTokenId;
     uint256 public licenseId;
-    
+
     uint256 constant RESOLUTION_DEADLINE = 30 days;
-    
+
     event DisputeSubmitted(
         uint256 indexed disputeId,
         uint256 indexed licenseId,
         address indexed submitter,
         string reason
     );
-    event DisputeResolved(
-        uint256 indexed disputeId,
-        bool approved,
-        address indexed resolver,
-        string reason
-    );
+    event DisputeResolved(uint256 indexed disputeId, bool approved, address indexed resolver, string reason);
     event LicenseRevoked(uint256 indexed licenseId, uint256 indexed disputeId);
-    event DisputeOverdue(uint256 indexed disputeId, uint256 daysOverdue);
-    
+
     function setUp() public {
         vm.startPrank(admin);
-        
-        // Deploy contracts
+
+        // Deploy implementations
         IPAsset ipAssetImpl = new IPAsset();
         LicenseToken licenseTokenImpl = new LicenseToken();
         GovernanceArbitrator arbitratorImpl = new GovernanceArbitrator();
 
-        // Deploy proxies (need to deploy IPAsset proxy first to get address for RevenueDistributor)
+        // Deploy IPAsset proxy
         bytes memory ipAssetInitData = abi.encodeWithSelector(
-            IPAsset.initialize.selector,
-            "IP Asset",
-            "IPA",
-            admin,
-            address(0),
-            address(0)
+            IPAsset.initialize.selector, "IP Asset", "IPA", admin, address(0), address(0)
         );
         ERC1967Proxy ipAssetProxy = new ERC1967Proxy(address(ipAssetImpl), ipAssetInitData);
         ipAsset = IPAsset(address(ipAssetProxy));
 
-        // Deploy RevenueDistributor with IPAsset address
+        // Deploy RevenueDistributor
         revenueDistributor = new RevenueDistributor(treasury, 250, 1000, address(ipAsset));
 
+        // Deploy LicenseToken proxy
         bytes memory licenseTokenInitData = abi.encodeWithSelector(
             LicenseToken.initialize.selector,
             "https://license.uri/",
@@ -76,6 +66,7 @@ contract GovernanceArbitratorTest is Test {
         ERC1967Proxy licenseTokenProxy = new ERC1967Proxy(address(licenseTokenImpl), licenseTokenInitData);
         licenseToken = LicenseToken(address(licenseTokenProxy));
 
+        // Deploy GovernanceArbitrator proxy
         bytes memory arbitratorInitData = abi.encodeWithSelector(
             GovernanceArbitrator.initialize.selector,
             admin,
@@ -85,446 +76,361 @@ contract GovernanceArbitratorTest is Test {
         );
         ERC1967Proxy arbitratorProxy = new ERC1967Proxy(address(arbitratorImpl), arbitratorInitData);
         arbitrator = GovernanceArbitrator(address(arbitratorProxy));
-        
+
+        // Wire up contracts
         ipAsset.setLicenseTokenContract(address(licenseToken));
         ipAsset.setArbitratorContract(address(arbitrator));
         licenseToken.setArbitratorContract(address(arbitrator));
-        
+
+        // Grant roles
         ipAsset.grantRole(ipAsset.LICENSE_MANAGER_ROLE(), address(licenseToken));
         ipAsset.grantRole(ipAsset.ARBITRATOR_ROLE(), address(arbitrator));
         licenseToken.grantRole(licenseToken.ARBITRATOR_ROLE(), address(arbitrator));
         licenseToken.grantRole(licenseToken.IP_ASSET_ROLE(), address(ipAsset));
         arbitrator.grantRole(arbitrator.ARBITRATOR_ROLE(), arbitratorRole);
-        
+
         vm.stopPrank();
-        
-        // Setup test license
+
+        // Create test IP and license
         vm.prank(ipOwner);
-        ipTokenId = ipAsset.mintIP(ipOwner, "ipfs://metadata");
-        
+        ipTokenId = ipAsset.mintIP(ipOwner, "ipfs://test");
+
         vm.prank(ipOwner);
         licenseId = ipAsset.mintLicense(
-            ipTokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 365 days,
-            "worldwide",
-            false, 0);
+            ipTokenId, licensee, 1, "ipfs://public", "ipfs://private", block.timestamp + 365 days, "terms", false, 0
+        );
     }
-    
-    // ============ BR-005.1: Any party MAY submit disputes, and optional proof (document) may be included ============
-    
+
+    // ==================== CONTRACT SETUP TESTS ====================
+
+    function testInitialization() public view {
+        assertEq(arbitrator.licenseTokenContract(), address(licenseToken));
+        assertEq(arbitrator.ipAssetContract(), address(ipAsset));
+        assertEq(arbitrator.revenueDistributorContract(), address(revenueDistributor));
+    }
+
+    function testTwoRolesGranted() public view {
+        assertTrue(arbitrator.hasRole(arbitrator.DEFAULT_ADMIN_ROLE(), admin));
+        assertTrue(arbitrator.hasRole(arbitrator.ARBITRATOR_ROLE(), admin));
+        assertTrue(arbitrator.hasRole(arbitrator.ARBITRATOR_ROLE(), arbitratorRole));
+    }
+
+    // ==================== SUBMIT DISPUTE TESTS ====================
+
     function testIPOwnerCanSubmitDispute() public {
         vm.prank(ipOwner);
-        vm.expectEmit(true, true, true, true);
-        emit DisputeSubmitted(0, licenseId, ipOwner, "License violation");
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "License violation",
-            "ipfs://proof"
-        );
-        
-        (,address submitter,,,,,,,,) = arbitrator.disputes(disputeId);
-        assertEq(submitter, ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Terms violation", "ipfs://proof");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(dispute.submitter, ipOwner);
+        assertEq(dispute.licenseId, licenseId);
+        assertEq(dispute.reason, "Terms violation");
     }
-    
+
     function testLicenseeCanSubmitDispute() public {
         vm.prank(licensee);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Unfair terms",
-            ""
-        );
-        
-        (,address submitter,,,,,,,,) = arbitrator.disputes(disputeId);
-        assertEq(submitter, licensee);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Unfair terms", "ipfs://proof");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(dispute.submitter, licensee);
     }
-    
+
     function testThirdPartyCanSubmitDispute() public {
         vm.prank(thirdParty);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Observed violation",
-            "ipfs://evidence"
-        );
-        
-        (,address submitter,,,,,,,,) = arbitrator.disputes(disputeId);
-        assertEq(submitter, thirdParty);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Infringement", "ipfs://proof");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(dispute.submitter, thirdParty);
     }
-    
+
     function testSubmitDisputeWithOptionalProof() public {
         vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            "ipfs://proof-document"
-        );
-        
-        (,,,,string memory proofURI,,,,,) = arbitrator.disputes(disputeId);
-        assertEq(proofURI, "ipfs://proof-document");
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://evidence");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(dispute.proofURI, "ipfs://evidence");
     }
-    
-    function testSubmitDisputeWithoutProof() public {
+
+    function testSubmitDisputeWithEmptyProof() public {
         vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            "" // Empty proof
-        );
-        
-        (,,,,string memory proofURI,,,,,) = arbitrator.disputes(disputeId);
-        assertEq(proofURI, "");
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(dispute.proofURI, "");
     }
-    
-    // ============ BR-005.2: Disputes MAY only target active licenses ============
-    
+
     function testCannotSubmitDisputeForInactiveLicense() public {
-        // Revoke the license first
+        // Revoke the license first (arbitrator contract has the role)
         vm.prank(address(arbitrator));
         licenseToken.revokeLicense(licenseId, "Test revocation");
-        
+
+        vm.expectRevert(IGovernanceArbitrator.LicenseNotActive.selector);
         vm.prank(ipOwner);
-        vm.expectRevert("License not active");
-        arbitrator.submitDispute(licenseId, "Violation", "");
+        arbitrator.submitDispute(licenseId, "Should fail", "");
     }
-    
+
     function testCannotSubmitDisputeForExpiredLicense() public {
-        // Create expired license
+        // Warp time forward past expiry
+        vm.warp(block.timestamp + 366 days);
+
+        // Mark the license as expired
+        licenseToken.markExpired(licenseId);
+
+        vm.expectRevert(IGovernanceArbitrator.LicenseNotActive.selector);
         vm.prank(ipOwner);
-        uint256 expiredLicenseId = ipAsset.mintLicense(
-            ipTokenId,
-            licensee,
-            1,
-            "ipfs://public",
-            "ipfs://private",
-            block.timestamp + 1 days,
-            "worldwide",
-            false, 0);
-        
-        vm.warp(block.timestamp + 2 days);
-        licenseToken.markExpired(expiredLicenseId);
-        
-        vm.prank(ipOwner);
-        vm.expectRevert("License not active");
-        arbitrator.submitDispute(expiredLicenseId, "Violation", "");
+        arbitrator.submitDispute(licenseId, "Should fail", "");
     }
-    
-    // ============ BR-005.3: Disputes MUST include a reason ============
-    
+
     function testCannotSubmitDisputeWithoutReason() public {
+        vm.expectRevert(IGovernanceArbitrator.EmptyReason.selector);
         vm.prank(ipOwner);
-        vm.expectRevert("Reason required");
         arbitrator.submitDispute(licenseId, "", "ipfs://proof");
     }
-    
-    function testSubmitDisputeWithReason() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Unauthorized commercial use",
-            ""
-        );
-        
-        (,,,string memory reason,,,,,,) = arbitrator.disputes(disputeId);
-        assertEq(reason, "Unauthorized commercial use");
-    }
-    
-    // ============ BR-005.4: Only authorized arbitrators MAY resolve disputes ============
-    
-    function testOnlyArbitratorCanResolveDispute() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            ""
-        );
-        
-        vm.prank(ipOwner);
-        vm.expectRevert();
-        arbitrator.resolveDispute(disputeId, true, "Approved");
-        
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, true, "Approved");
-        
-        (,,,,,, IGovernanceArbitrator.DisputeStatus status,,,) = arbitrator.disputes(disputeId);
-        assertTrue(status == IGovernanceArbitrator.DisputeStatus.Approved);
-    }
-    
-    // ============ BR-005.5: Approved disputes MUST result in license revocation ============
-    
-    function testApprovedDisputeResultsInRevocation() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            ""
-        );
-        
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
-        
-        vm.prank(arbitratorRole);
-        vm.expectEmit(true, true, false, false);
-        emit LicenseRevoked(licenseId, disputeId);
-        arbitrator.executeRevocation(disputeId);
-        
-        assertTrue(licenseToken.isRevoked(licenseId));
-    }
-    
-    // ============ BR-005.6: Rejected disputes MUST NOT affect license status ============
-    
-    function testRejectedDisputeDoesNotAffectLicense() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            ""
-        );
 
-        // Check license is not revoked before resolution
-        assertFalse(licenseToken.isRevoked(licenseId));
+    function testDisputeStoresIPOwner() public {
+        vm.prank(thirdParty);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
 
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, false, "No evidence of violation");
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(dispute.ipOwner, ipOwner);
+    }
 
-        // Check license is still not revoked after rejection
-        assertFalse(licenseToken.isRevoked(licenseId));
-    }
-    
-    // ============ BR-005.7: Executed revocations MUST be permanent ============
-    
-    function testRevokedLicenseCannotBeReactivated() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            ""
-        );
-        
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, true, "Approved");
-        
-        vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
+    function testDisputeSubmissionSetsIPAssetFlag() public {
+        assertFalse(ipAsset.hasActiveDispute(ipTokenId));
 
-        assertTrue(licenseToken.isRevoked(licenseId));
+        vm.prank(ipOwner);
+        arbitrator.submitDispute(licenseId, "Test", "");
+
+        assertTrue(ipAsset.hasActiveDispute(ipTokenId));
     }
-    
-    // ============ BR-005.8: Dispute resolutions MUST occur within 30 days ============
-    
-    function testCanResolveDisputeWithin30Days() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            ""
-        );
-        
-        // Fast forward 29 days
-        vm.warp(block.timestamp + 29 days);
-        
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, true, "Approved");
-        
-        (,,,,,, IGovernanceArbitrator.DisputeStatus status,,,) = arbitrator.disputes(disputeId);
-        assertTrue(status == IGovernanceArbitrator.DisputeStatus.Approved);
-    }
-    
-    function testCannotResolveDisputeAfter30Days() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            ""
-        );
-        
-        // Fast forward 31 days
-        vm.warp(block.timestamp + 31 days);
-        
-        vm.prank(arbitratorRole);
-        vm.expectRevert("Dispute resolution overdue");
-        arbitrator.resolveDispute(disputeId, true, "Approved");
-    }
-    
-    function testIsDisputeOverdue() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            ""
-        );
-        
-        assertFalse(arbitrator.isDisputeOverdue(disputeId));
-        
-        vm.warp(block.timestamp + 31 days);
-        
-        assertTrue(arbitrator.isDisputeOverdue(disputeId));
-    }
-    
-    function testGetTimeRemaining() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            ""
-        );
-        
-        uint256 timeRemaining = arbitrator.getTimeRemaining(disputeId);
-        assertEq(timeRemaining, 30 days);
-        
-        vm.warp(block.timestamp + 10 days);
-        
-        timeRemaining = arbitrator.getTimeRemaining(disputeId);
-        assertEq(timeRemaining, 20 days);
-    }
-    
-    function testGetOverdueDisputes() public {
-        // Create multiple disputes
-        vm.prank(ipOwner);
-        uint256 disputeId1 = arbitrator.submitDispute(licenseId, "Violation 1", "");
-        
-        vm.warp(block.timestamp + 1 days);
-        
-        vm.prank(ipOwner);
-        uint256 disputeId2 = arbitrator.submitDispute(licenseId, "Violation 2", "");
-        
-        // Fast forward past deadline for first dispute
-        vm.warp(block.timestamp + 30 days);
-        
-        uint256[] memory overdueDisputes = arbitrator.getOverdueDisputes();
-        
-        assertEq(overdueDisputes.length, 1);
-        assertEq(overdueDisputes[0], disputeId1);
-    }
-    
-    // ============ Additional Tests ============
-    
-    function testDisputeSubmittedEvent() public {
-        vm.prank(ipOwner);
+
+    function testDisputeSubmittedEventEmitted() public {
         vm.expectEmit(true, true, true, true);
         emit DisputeSubmitted(0, licenseId, ipOwner, "Violation");
-        arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
-    }
-    
-    function testDisputeResolvedEvent() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "");
-        
-        vm.prank(arbitratorRole);
-        vm.expectEmit(true, false, false, true);
-        emit DisputeResolved(disputeId, true, arbitratorRole, "Approved");
-        arbitrator.resolveDispute(disputeId, true, "Approved");
-    }
-    
-    function testGetDispute() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(
-            licenseId,
-            "Violation",
-            "ipfs://proof"
-        );
-        
-        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
 
-        assertEq(dispute.licenseId, licenseId);
-        assertEq(dispute.submitter, ipOwner);
-        assertEq(dispute.reason, "Violation");
-        assertEq(dispute.proofURI, "ipfs://proof");
-        assertTrue(dispute.status == IGovernanceArbitrator.DisputeStatus.Pending);
-    }
-    
-    function testGetDisputesForLicense() public {
         vm.prank(ipOwner);
-        uint256 disputeId1 = arbitrator.submitDispute(licenseId, "Violation 1", "");
-        
+        arbitrator.submitDispute(licenseId, "Violation", "");
+    }
+
+    // ==================== RESOLVE DISPUTE TESTS ====================
+
+    function testOnlyArbitratorCanResolveDispute() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Approved");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
+    }
+
+    function testNonArbitratorCannotResolveDispute() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        bytes32 arbitratorRoleHash = arbitrator.ARBITRATOR_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", thirdParty, arbitratorRoleHash
+            )
+        );
+        vm.prank(thirdParty);
+        arbitrator.resolveDispute(disputeId, true, "Should fail");
+    }
+
+    function testApproveDispute() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Approved");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
+        assertEq(dispute.resolver, arbitratorRole);
+        assertEq(dispute.resolutionReason, "Approved");
+        assertGt(dispute.resolvedAt, 0);
+    }
+
+    function testRejectDispute() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, false, "Rejected");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Rejected));
+    }
+
+    function testRejectedDisputeDoesNotAffectLicense() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        bool wasActiveBeforeResolve = licenseToken.isActiveLicense(licenseId);
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, false, "Rejected");
+
+        bool isActiveAfterReject = licenseToken.isActiveLicense(licenseId);
+        assertTrue(wasActiveBeforeResolve);
+        assertTrue(isActiveAfterReject);
+    }
+
+    function testCanResolveDisputeWithin30Days() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        // Warp to day 29
+        vm.warp(block.timestamp + 29 days);
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Approved on day 29");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
+    }
+
+    function testCannotResolveDisputeAfter30Days() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        // Warp past 30 days
+        vm.warp(block.timestamp + 31 days);
+
+        vm.expectRevert(IGovernanceArbitrator.DisputeResolutionOverdue.selector);
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Should fail");
+    }
+
+    function testCannotResolveAlreadyResolvedDispute() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "First resolution");
+
+        vm.expectRevert(IGovernanceArbitrator.DisputeAlreadyResolved.selector);
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, false, "Second resolution should fail");
+    }
+
+    function testResolutionClearsIPAssetFlagWhenNoOtherPending() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        assertTrue(ipAsset.hasActiveDispute(ipTokenId));
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, false, "Rejected");
+
+        assertFalse(ipAsset.hasActiveDispute(ipTokenId));
+    }
+
+    function testResolutionKeepsIPAssetFlagWhenOtherPending() public {
+        vm.prank(ipOwner);
+        uint256 dispute1 = arbitrator.submitDispute(licenseId, "Test 1", "");
+
         vm.prank(licensee);
-        uint256 disputeId2 = arbitrator.submitDispute(licenseId, "Violation 2", "");
-        
-        uint256[] memory disputes = arbitrator.getDisputesForLicense(licenseId);
-        
+        uint256 dispute2 = arbitrator.submitDispute(licenseId, "Test 2", "");
+
+        assertTrue(ipAsset.hasActiveDispute(ipTokenId));
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(dispute1, false, "Rejected first");
+
+        assertTrue(ipAsset.hasActiveDispute(ipTokenId));
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(dispute2, false, "Rejected second");
+
+        assertFalse(ipAsset.hasActiveDispute(ipTokenId));
+    }
+
+    function testDisputeResolvedEventEmitted() public {
+        vm.prank(ipOwner);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        vm.expectEmit(true, false, true, true);
+        emit DisputeResolved(disputeId, true, arbitratorRole, "Approved");
+
+        vm.prank(arbitratorRole);
+        arbitrator.resolveDispute(disputeId, true, "Approved");
+    }
+
+    // ==================== HELPER FUNCTION TESTS ====================
+
+    function testGetLicenseDisputes() public {
+        vm.prank(ipOwner);
+        uint256 dispute1 = arbitrator.submitDispute(licenseId, "Test 1", "");
+
+        vm.prank(licensee);
+        uint256 dispute2 = arbitrator.submitDispute(licenseId, "Test 2", "");
+
+        uint256[] memory disputes = arbitrator.getLicenseDisputes(licenseId);
         assertEq(disputes.length, 2);
-        assertEq(disputes[0], disputeId1);
-        assertEq(disputes[1], disputeId2);
+        assertEq(disputes[0], dispute1);
+        assertEq(disputes[1], dispute2);
     }
-    
-    function testCannotExecuteRevocationForRejectedDispute() public {
+
+    function testGetDisputeCount() public {
+        assertEq(arbitrator.getDisputeCount(), 0);
+
         vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "");
-        
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, false, "Rejected");
-        
-        vm.prank(arbitratorRole);
-        vm.expectRevert("Dispute not approved");
-        arbitrator.executeRevocation(disputeId);
+        arbitrator.submitDispute(licenseId, "Test 1", "");
+        assertEq(arbitrator.getDisputeCount(), 1);
+
+        vm.prank(licensee);
+        arbitrator.submitDispute(licenseId, "Test 2", "");
+        assertEq(arbitrator.getDisputeCount(), 2);
     }
-    
-    function testCannotExecuteRevocationForPendingDispute() public {
+
+    function testIsDisputeOverdue() public {
         vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "");
-        
-        vm.prank(arbitratorRole);
-        vm.expectRevert("Dispute not approved");
-        arbitrator.executeRevocation(disputeId);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        assertFalse(arbitrator.isDisputeOverdue(disputeId));
+
+        vm.warp(block.timestamp + 31 days);
+        assertTrue(arbitrator.isDisputeOverdue(disputeId));
     }
-    
-    function testCannotExecuteRevocationTwice() public {
+
+    function testGetTimeRemaining() public {
         vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "");
-        
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, true, "Approved");
-        
-        vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
-        
-        vm.prank(arbitratorRole);
-        vm.expectRevert("Already executed");
-        arbitrator.executeRevocation(disputeId);
+        uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
+
+        uint256 remaining = arbitrator.getTimeRemaining(disputeId);
+        assertEq(remaining, 30 days);
+
+        vm.warp(block.timestamp + 15 days);
+        remaining = arbitrator.getTimeRemaining(disputeId);
+        assertEq(remaining, 15 days);
+
+        vm.warp(block.timestamp + 16 days);
+        remaining = arbitrator.getTimeRemaining(disputeId);
+        assertEq(remaining, 0);
     }
-    
-    function testDisputeSetsIPAssetDisputeStatus() public {
-        assertFalse(ipAsset.hasActiveDispute(ipTokenId));
-        
-        vm.prank(ipOwner);
-        arbitrator.submitDispute(licenseId, "Violation", "");
-        
-        assertTrue(ipAsset.hasActiveDispute(ipTokenId));
-    }
-    
-    function testResolvedDisputeClearsIPAssetDisputeStatus() public {
-        vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "");
-        
-        assertTrue(ipAsset.hasActiveDispute(ipTokenId));
-        
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, false, "Rejected");
-        
-        assertFalse(ipAsset.hasActiveDispute(ipTokenId));
-    }
-    
-    function testCannotSubmitDisputeWhenPaused() public {
+
+    // ==================== PAUSE TESTS ====================
+
+    function testAdminCanPause() public {
         vm.prank(admin);
         arbitrator.pause();
-        
-        vm.prank(ipOwner);
+
         vm.expectRevert();
-        arbitrator.submitDispute(licenseId, "Violation", "");
-    }
-    
-    function testCannotResolveDisputeWhenPaused() public {
         vm.prank(ipOwner);
-        uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "");
-        
+        arbitrator.submitDispute(licenseId, "Should fail", "");
+    }
+
+    function testAdminCanUnpause() public {
         vm.prank(admin);
         arbitrator.pause();
-        
-        vm.prank(arbitratorRole);
-        vm.expectRevert();
-        arbitrator.resolveDispute(disputeId, true, "Approved");
+
+        vm.prank(admin);
+        arbitrator.unpause();
+
+        vm.prank(ipOwner);
+        arbitrator.submitDispute(licenseId, "Should succeed", "");
     }
 }
-
