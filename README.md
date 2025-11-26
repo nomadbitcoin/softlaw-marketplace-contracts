@@ -2,9 +2,29 @@
 
 Smart contracts for the Softlaw marketplace, built with Foundry for deployment on Polkadot's Asset Hub (Passet Hub TestNet).
 
-## Quick Start
+## Development Environment
 
-### Prerequisites
+### Option 1: DevContainer (Recommended)
+
+This project includes a pre-configured DevContainer with all tools installed:
+
+**Requirements:**
+- Docker
+- VS Code with Remote-Containers extension
+
+**Setup:**
+1. Open project in VS Code
+2. Click "Reopen in Container" when prompted
+3. Add your `PRIVATE_KEY` to `.env` file
+4. Start developing - Foundry and all dependencies are pre-installed
+
+The DevContainer automatically:
+- Installs Foundry and Solidity tools
+- Loads your `.env` file
+- Configures the development environment
+- Sets up git and shell aliases
+
+### Option 2: Manual Setup
 
 **Install Foundry:**
 ```bash
