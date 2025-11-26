@@ -1,110 +1,73 @@
 # Softlaw Marketplace Contracts
 
-Smart contracts for the Softlaw marketplace, built with Foundry for deployment on Polkadot's Asset Hub (PolkaVM).
+Smart contracts for the Softlaw marketplace, built with Foundry for deployment on Polkadot's Asset Hub (Passet Hub TestNet).
 
-## Prerequisites
+## Quick Start
 
-### Install Foundry
+### Prerequisites
 
+**Install Foundry:**
 ```bash
 curl -L https://foundry.paradigm.xyz | bash
 foundryup
 ```
 
-### Environment Setup
-
+**Setup Environment:**
 ```bash
 cp .env.example .env
 # Add your PRIVATE_KEY to .env
 ```
 
-Get testnet tokens from [Polkadot Faucet](https://faucet.polkadot.io/?parachain=1111)
+**Get Testnet Tokens:**
+[Polkadot Faucet](https://faucet.polkadot.io/?parachain=1111)
 
-## Testing
-
-Run tests:
-```bash
-forge test                                    # All tests
-forge test --match-path "test/base/*.t.sol"  # Base contracts only
-forge test --match-contract IPAssetTest       # Specific contract
-```
-
-### Gas Reports
+### Build & Test
 
 ```bash
-forge test --gas-report                                   # All contracts
-forge test --match-path "test/base/*.t.sol" --gas-report # Base contracts only
-```
-
-### Coverage
-
-```bash
-forge coverage                          # Terminal output
-forge coverage --report lcov            # LCOV format
-forge coverage --report html            # HTML report
-open coverage/index.html                # View in browser
-```
-
-## Building
-
-### Build Contracts
-
-```bash
-forge build
+forge build                    # Build contracts
+forge test                     # Run all tests
+forge test --gas-report        # With gas usage
+forge coverage                 # Coverage report
 ```
 
 ## Deployment
 
-### Deploy to Passet Hub Testnet
+**See [Deployment Guide](script/deployment-guide.md) for complete instructions.**
 
+Quick deploy all contracts:
 ```bash
-source .env
-forge script script/DeployIPAsset.s.sol:DeployIPAsset \
-  --rpc-url paseo \
+forge script script/DeployProduction.s.sol:DeployProduction \
+  --rpc-url passetHub \
   --broadcast \
-  --private-key $PRIVATE_KEY
-  --legacy
-  --skip-simulation
+  --legacy \
+  -vv
 ```
 
-### Quick Deploy Script
-
-```bash
-./deploy.sh
-```
-
-## Networks
+## Network Information
 
 ### Passet Hub (Testnet)
 
-- **Network**: Passet Hub (Polkadot Asset Hub TestNet)
-- **Type**: EVM-compatible
+- **Network**: Polkadot Asset Hub TestNet
 - **Chain ID**: `420420422`
 - **RPC**: `https://testnet-passet-hub-eth-rpc.polkadot.io`
 - **Explorer**: https://blockscout-passet-hub.parity-testnet.parity.io
 - **Faucet**: https://faucet.polkadot.io/?parachain=1111
 
-### Polkadot Hub (Mainnet)
+RPC endpoint configured in `foundry.toml` as `passetHub`.
 
-Check [Polkadot docs](https://docs.polkadot.com/polkadot-protocol/smart-contract-basics/networks/) for mainnet endpoints.
+## Contract Architecture
 
-## Verification
+The marketplace consists of 5 core contracts:
 
-After deployment:
+| Contract | Type | Description |
+|----------|------|-------------|
+| **IPAsset** | ERC721 | IP asset ownership and licensing |
+| **LicenseToken** | ERC1155 | License ownership and management |
+| **GovernanceArbitrator** | Governance | Dispute resolution and arbitration |
+| **Marketplace** | Trading | IP asset and license marketplace |
+| **RevenueDistributor** | Logic | Revenue sharing and royalties |
 
-```bash
-# Check contract exists
-cast code <CONTRACT_ADDRESS> --rpc-url paseo
-
-# Verify initialization
-cast call <CONTRACT_ADDRESS> "name()(string)" --rpc-url paseo
-
-# Send transaction
-source .env
-cast send <CONTRACT_ADDRESS> "mintIP(address,string)" $YOUR_ADDRESS "ipfs://metadata" \
-  --rpc-url paseo \
-  --private-key $PRIVATE_KEY
-```
+All contracts except RevenueDistributor use UUPS upgradeable pattern.
 
 ## Project Structure
 
@@ -112,35 +75,53 @@ cast send <CONTRACT_ADDRESS> "mintIP(address,string)" $YOUR_ADDRESS "ipfs://meta
 .
 ├── src/              # Smart contracts
 │   ├── interfaces/   # Contract interfaces
-│   └── base/         # Base contract implementations
+│   ├── IPAsset.sol
+│   ├── LicenseToken.sol
+│   ├── GovernanceArbitrator.sol
+│   ├── Marketplace.sol
+│   └── RevenueDistributor.sol
 ├── script/           # Deployment scripts
-├── test/             # Test files
-│   └── base/         # Base contract tests
-├── lib/              # Dependencies (forge-std, OpenZeppelin)
-├── foundry.toml      # Foundry configuration
-├── .env              # Environment variables (not committed)
-└── docs/             # Documentation and architecture
-    ├── architecture/ # Technical specifications
-    └── stories/      # User stories and epics
+│   ├── deployment-guide.md        # Deployment instructions
+│   ├── DeployProduction.s.sol     # Deploy all contracts
+│   ├── DeployIPAsset.s.sol        # Individual deployments
+│   └── SetupAddresses.s.sol       # Wire contracts together
+└── test/             # Test files
 ```
 
-## Security
+## Testing
 
-- Never commit private keys (`.env` is gitignored)
-- Use hardware wallets for mainnet deployments
-- Test thoroughly on testnet before mainnet
-- Use keystore for production:
-  ```bash
-  cast wallet import deployer --interactive
-  forge script --account deployer --sender <address>
-  ```
+```bash
+# Run all tests
+forge test
 
-## Resources
+# Specific test file
+forge test --match-path "test/IPAsset.t.sol"
 
-- [Polkadot Developer Docs](https://docs.polkadot.com/)
-- [Foundry Book](https://book.getfoundry.sh/)
-- [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts)
+# Specific contract tests
+forge test --match-contract IPAssetTest
 
-## License
+# With gas reporting
+forge test --gas-report
 
-MIT
+# Coverage
+forge coverage
+forge coverage --report html && open coverage/index.html
+```
+
+## Verification
+
+After deployment, verify contracts:
+
+```bash
+# Check contract exists
+cast code <CONTRACT_ADDRESS> --rpc-url passetHub
+
+# Read contract data
+cast call <CONTRACT_ADDRESS> "name()(string)" --rpc-url passetHub
+
+# Send transaction
+cast send <CONTRACT_ADDRESS> "mintIP(address,string)" $YOUR_ADDRESS "ipfs://metadata" \
+  --rpc-url passetHub \
+  --private-key $PRIVATE_KEY \
+  --legacy
+```
