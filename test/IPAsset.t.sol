@@ -6,7 +6,7 @@ import "../src/IPAsset.sol";
 import "../src/LicenseToken.sol";
 import "../src/GovernanceArbitrator.sol";
 import "../src/RevenueDistributor.sol";
-import "../src/base/ERC1967Proxy.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract IPAssetTest is Test {
     IPAsset public ipAsset;

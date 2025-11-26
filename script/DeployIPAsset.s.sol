@@ -6,45 +6,37 @@ import "../src/IPAsset.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployIPAsset is Script {
-    function run() external {
+    function run() external returns (address proxy, address implementation) {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
-        console.log("Deploying from:", deployer);
-        console.log("Deployer balance:", deployer.balance);
+        console.log("Deploying IPAsset...");
+        console.log("Deployer:", deployer);
 
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy implementation
-        console.log("\n=== Deploying IPAsset Implementation ===");
-        IPAsset implementation = new IPAsset();
-        console.log("Implementation deployed at:", address(implementation));
+        IPAsset ipAssetImpl = new IPAsset();
+        implementation = address(ipAssetImpl);
+        console.log("Implementation:", implementation);
 
-        // Prepare initialization data
+        // Deploy proxy with initialization
         bytes memory initData = abi.encodeWithSelector(
             IPAsset.initialize.selector,
-            "IP Asset", // name
-            "IPA", // symbol
-            deployer, // admin
-            address(0), // licenseToken (to be set later)
-            address(0) // arbitrator (to be set later)
+            "IP Asset",
+            "IPA",
+            deployer,
+            address(0), // licenseToken - set later
+            address(0)  // arbitrator - set later
         );
 
-        // Deploy proxy
-        console.log("\n=== Deploying ERC1967 Proxy ===");
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
-        console.log("Proxy deployed at:", address(proxy));
-
-        console.log("\n=== Deployment Summary ===");
-        console.log("IPAsset Implementation:", address(implementation));
-        console.log("IPAsset Proxy (use this):", address(proxy));
-        console.log("Admin:", deployer);
+        ERC1967Proxy ipAssetProxy = new ERC1967Proxy(implementation, initData);
+        proxy = address(ipAssetProxy);
+        console.log("Proxy:", proxy);
 
         vm.stopBroadcast();
 
-        // Verify initialization
-        IPAsset ipAsset = IPAsset(address(proxy));
-        console.log("\n=== Verification ===");
-        console.log("Has DEFAULT_ADMIN_ROLE:", ipAsset.hasRole(ipAsset.DEFAULT_ADMIN_ROLE(), deployer));
+        console.log("\nIPAsset deployed!");
+        console.log("Use proxy address:", proxy);
     }
 }

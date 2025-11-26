@@ -10,11 +10,11 @@ optimizer_runs = 200
 via_ir = true
 gas_reports = ["*"]
 gas_reports_ignore = []
+fs_permissions = [{ access = "read-write", path = "./deployments/" }]
 
 # Network endpoints
 [rpc_endpoints]
-paseo = "https://testnet-passet-hub-eth-rpc.polkadot.io"
-passetHub = "${paseo}"
+passetHub = "https://testnet-passet-hub-eth-rpc.polkadot.io"
 localNode = "http://127.0.0.1:8545"
 
 # Formatter
