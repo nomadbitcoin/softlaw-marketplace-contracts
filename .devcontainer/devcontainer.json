@@ -15,7 +15,8 @@
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
     "HISTFILE": "/commandhistory/.bash_history"
   },
-  "postAttachCommand": "cd /project && bash -c 'devtools setup-devcontainer && devtools setup-keypair'",
+  "postCreateCommand": "bash -c 'cd /project && [ -f .env ] && echo \"set -a && . /project/.env && set +a\" >> /home/vscode/.bashrc || true'",
+  "postAttachCommand": "bash /project/.devcontainer/init.sh",
   "customizations": {
     "vscode": {
       "extensions": [
