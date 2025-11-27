@@ -1,0 +1,33 @@
+<!-- Mermaid -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Mermaid
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            themeVariables: {
+                primaryColor: '#1f2937',
+                primaryTextColor: '#e5e7eb',
+                primaryBorderColor: '#374151',
+                lineColor: '#6b7280',
+                secondaryColor: '#374151',
+                tertiaryColor: '#111827'
+            }
+        });
+
+        // Process all mermaid code blocks
+        const mermaidBlocks = document.querySelectorAll('code.language-mermaid');
+        mermaidBlocks.forEach((block, index) => {
+            const code = block.textContent;
+            const pre = block.parentElement;
+            const container = document.createElement('div');
+            container.className = 'mermaid';
+            container.textContent = code;
+            pre.replaceWith(container);
+        });
+
+        // Render all mermaid diagrams
+        mermaid.run();
+    });
+</script>

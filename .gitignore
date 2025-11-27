@@ -50,17 +50,33 @@ deployments/
 build/
 dist/
 
-# Documentation
+# Documentation (generated)
 docs/.build/
 docs/_build/
+docs/book/
+docs/.gitignore
+docs/book.toml
+docs/book.css
+docs/solidity.min.js
+docs/internal
+
+# Ignore internal docs but track src docs
+docs/internal/
+docs/contracts/
+
+# Track these documentation files
+!docs/src/
+!docs/public/
+!docs/*.md
+!docs/*.sh
 
 # Local development
 .cache/
 .history/
 
-# Forge
-lib/
-!lib/forge-std/
+# Forge - ignore lib contents but allow submodules
+lib/*
+!lib/.gitkeep
 
 # Solidity
 *.abi

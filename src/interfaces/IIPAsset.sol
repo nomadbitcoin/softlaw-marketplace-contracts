@@ -40,7 +40,7 @@ interface IIPAsset {
      *      Indexers can build complete license lists by filtering this event by ipTokenId.
      *      This replaces the need for on-chain ipToLicenses[] array storage (gas optimization).
      * @param ipTokenId The IP asset token ID this license is for
-     * @param licenseId The ID of the newly registered license (0 in Phase 1 stub)
+     * @param licenseId The ID of the newly registered license
      * @param licensee The address receiving the license
      * @param supply Number of license tokens minted (ERC-1155 supply)
      * @param isExclusive Whether this is an exclusive license
@@ -154,13 +154,9 @@ interface IIPAsset {
 
     /**
      * @notice Creates a new license for an IP asset
-     * @dev PHASE 1 (Epic 1): Minimal stub implementation that increments activeLicenseCount for burn protection testing.
-     *      Returns placeholder license ID (0). Emits LicenseRegistered event for off-chain tracking.
-     *
-     *      PHASE 2 (Epic 3, Story 3.2): Will delegate to LicenseToken contract which calls back to
-     *      updateActiveLicenseCount(). The temporary increment will be removed at that time.
-     *
+     * @dev Delegates to LicenseToken contract to mint the license.
      *      Only the IP asset owner can mint licenses.
+     *      Emits LicenseRegistered event for off-chain tracking.
      * @param ipTokenId The IP asset to create a license for
      * @param licensee Address to receive the license
      * @param supply Number of license tokens to mint (ERC-1155 supply)

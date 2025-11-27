@@ -3,8 +3,8 @@ pragma solidity ^0.8.28;
 
 /**
  * @title IGovernanceArbitrator
- * @notice Interface for dispute resolution and governance
- * @dev Manages disputes for licenses with 30-day resolution deadline
+ * @notice Interface for third-party dispute arbitration (no governance)
+ * @dev Manages license disputes with 30-day resolution deadline via designated arbitrators
  */
 interface IGovernanceArbitrator {
     // ==================== ENUMS ====================
