@@ -144,7 +144,7 @@ contract LicenseToken is
         emit LicenseRevoked(licenseId, reason);
     }
 
-    function revokeForMissedPayments(uint256 licenseId, uint256 missedCount) external onlyRole(MARKETPLACE_ROLE) {
+    function revokeForMissedPayments(uint256 licenseId, uint256 missedCount) external {
         uint8 maxAllowed = licenses[licenseId].maxMissedPayments;
         if (missedCount < maxAllowed) revert InsufficientMissedPayments();
         _revoke(licenseId);

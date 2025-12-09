@@ -222,11 +222,11 @@ interface ILicenseToken {
 
     /**
      * @notice Revokes a license for missed payments
-     * @dev Only callable by MARKETPLACE_ROLE
+     * @dev Anyone can call this function, but it will only succeed if missedCount >= maxMissedPayments
      * @dev Payment tracking is handled by Marketplace contract
-     * @dev Marketplace calculates missed payments and calls this function when threshold exceeded
+     * @dev Spam prevention: built-in validation requires missedCount to meet threshold
      * @param licenseId The license to revoke
-     * @param missedCount Number of missed payments (must be > 3)
+     * @param missedCount Number of missed payments (must meet maxMissedPayments threshold)
      */
     function revokeForMissedPayments(uint256 licenseId, uint256 missedCount) external;
 

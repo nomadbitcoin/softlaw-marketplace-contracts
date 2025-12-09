@@ -1580,16 +1580,18 @@ contract LicenseTokenRevocationTest is Test {
         assertTrue(isRevoked);
     }
 
-    function testOnlyMarketplaceCanAutoRevoke() public {
-        // Mint recurring license
+    function testAnyoneCanRevokeForMissedPayments() public {
+        // Mint recurring license with default maxMissedPayments = 3
         vm.prank(address(mockIPAsset));
         uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0);
 
-        // Non-marketplace attempts to auto-revoke
-        address nonMarketplace = address(0x999);
-        vm.prank(nonMarketplace);
-        vm.expectRevert();
+        // Anyone can call when conditions are met (missedCount >= maxMissedPayments)
+        address anyUser = address(0x999);
+        vm.prank(anyUser);
         licenseToken.revokeForMissedPayments(licenseId, 4);
+
+        // Verify license is revoked
+        assertTrue(licenseToken.isRevoked(licenseId));
     }
 
     function testCannotAutoRevokeWithLessThan3MissedPayments() public {
