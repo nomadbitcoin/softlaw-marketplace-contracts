@@ -307,9 +307,11 @@ interface IMarketplace {
     /**
      * @notice Calculates the current penalty for late payment
      * @dev Returns 0 if payment is not overdue or for ONE_TIME licenses
+     * @dev No penalty if within PENALTY_GRACE_PERIOD (3 days) of dueDate
+     * @dev Penalties only start accruing after dueDate + PENALTY_GRACE_PERIOD
      * @param licenseContract Address of the license token contract
      * @param licenseId The license ID
-     * @return penalty Penalty amount in wei
+     * @return penalty Penalty amount in wei (0 if within grace period)
      */
     function calculatePenalty(address licenseContract, uint256 licenseId) external view returns (uint256 penalty);
 

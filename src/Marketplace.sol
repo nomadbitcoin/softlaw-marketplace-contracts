@@ -24,6 +24,7 @@ contract Marketplace is
     uint256 public constant BASIS_POINTS = 10_000;
     uint256 public constant SECONDS_PER_MONTH = 2_592_000;
     uint256 public constant MAX_MISSED_PAYMENTS = 3;
+    uint256 public constant PENALTY_GRACE_PERIOD = 3 days;
 
     mapping(bytes32 => Listing) public listings;
     mapping(bytes32 => Offer) public offers;
@@ -235,7 +236,12 @@ contract Marketplace is
         uint256 nextDue = lastPaid + interval;
         if (block.timestamp <= nextDue) return 0;
 
-        uint256 secondsOverdue = block.timestamp - nextDue;
+        // Check if within grace period
+        uint256 gracePeriodEnd = nextDue + PENALTY_GRACE_PERIOD;
+        if (block.timestamp <= gracePeriodEnd) return 0;
+
+        // Calculate penalty only on time after grace period
+        uint256 secondsOverdue = block.timestamp - gracePeriodEnd;
         return (baseAmount * penaltyBasisPointsPerMonth * secondsOverdue) / (BASIS_POINTS * SECONDS_PER_MONTH);
     }
 

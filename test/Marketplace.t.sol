@@ -918,8 +918,8 @@ contract MarketplaceTest is Test {
 
         vm.warp(block.timestamp + 37 days);
 
-        // 7 days late = 7 * 86400 seconds overdue
-        uint256 secondsOverdue = 7 days;
+        // 7 days late total, but only 4 days after grace period = 4 * 86400 seconds overdue
+        uint256 secondsOverdue = 4 days;
         uint256 expectedPenalty = (1 ether * 500 * secondsOverdue) / (10000 * 2592000);
         uint256 totalExpected = 1 ether + expectedPenalty;
 
@@ -1100,14 +1100,14 @@ contract MarketplaceTest is Test {
         assertEq(penalty, 0);
         assertEq(total, 1 ether);
 
-        // Warp 7 days late
+        // Warp 7 days late (only 4 days after grace period)
         vm.warp(block.timestamp + 37 days);
 
         (baseAmount, penalty, total) =
             marketplace.getTotalPaymentDue(address(licenseToken), recurringLicenseId);
 
         assertEq(baseAmount, 1 ether);
-        uint256 secondsOverdue = 7 days;
+        uint256 secondsOverdue = 4 days; // 7 days late - 3 days grace period
         uint256 expectedPenalty = (1 ether * 500 * secondsOverdue) / (10000 * 2592000);
         assertEq(penalty, expectedPenalty);
         assertEq(total, 1 ether + expectedPenalty);
@@ -1148,10 +1148,10 @@ contract MarketplaceTest is Test {
         vm.prank(buyer);
         marketplace.buyListing{value: 1 ether}(listingId);
 
-        // Warp to 30 days + 1.5 days late (36 hours)
-        vm.warp(block.timestamp + 30 days + 36 hours);
+        // Warp to 30 days + 4.5 days late (36 hours after grace period ends)
+        vm.warp(block.timestamp + 30 days + 3 days + 36 hours);
 
-        // Calculate penalty for 1.5 days (36 hours = 129600 seconds)
+        // Calculate penalty for 1.5 days AFTER grace period (36 hours = 129600 seconds)
         uint256 secondsOverdue = 36 hours;
         uint256 expectedPenalty = (1 ether * 500 * secondsOverdue) / (10000 * 2592000);
 
@@ -1197,12 +1197,12 @@ contract MarketplaceTest is Test {
         vm.prank(buyer);
         marketplace.buyListing{value: 1 ether}(listingId);
 
-        // Random time: 30 days + 3 days + 7 hours + 23 minutes + 47 seconds
-        uint256 randomOverdue = 3 days + 7 hours + 23 minutes + 47 seconds;
-        vm.warp(block.timestamp + 30 days + randomOverdue);
+        // Random time after grace period: 30 days + 3 days (grace) + 3 days + 7 hours + 23 minutes + 47 seconds
+        uint256 timeAfterGrace = 3 days + 7 hours + 23 minutes + 47 seconds;
+        vm.warp(block.timestamp + 30 days + 3 days + timeAfterGrace);
 
-        // Calculate penalty for exact seconds overdue
-        uint256 expectedPenalty = (1 ether * 500 * randomOverdue) / (10000 * 2592000);
+        // Calculate penalty for exact seconds overdue AFTER grace period
+        uint256 expectedPenalty = (1 ether * 500 * timeAfterGrace) / (10000 * 2592000);
 
         uint256 actualPenalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
         assertEq(actualPenalty, expectedPenalty);
@@ -1248,16 +1248,16 @@ contract MarketplaceTest is Test {
         vm.prank(buyer);
         marketplace.buyListing{value: 1 ether}(listingId);
 
-        // Just 1 hour late
-        vm.warp(block.timestamp + 30 days + 1 hours);
+        // Just 1 hour late after grace period (3 days + 1 hour)
+        vm.warp(block.timestamp + 30 days + 3 days + 1 hours);
 
-        uint256 secondsOverdue = 3600; // 1 hour in seconds
+        uint256 secondsOverdue = 3600; // 1 hour in seconds AFTER grace period
         uint256 expectedPenalty = (1 ether * 500 * secondsOverdue) / (10000 * 2592000);
 
         uint256 actualPenalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
         assertEq(actualPenalty, expectedPenalty);
 
-        // Even 1 hour late should have a penalty
+        // Even 1 hour after grace period should have a penalty
         assertGt(actualPenalty, 0);
 
         (,, uint256 total) = marketplace.getTotalPaymentDue(address(licenseToken), recurringLicenseId);
@@ -1297,9 +1297,9 @@ contract MarketplaceTest is Test {
         vm.prank(buyer);
         marketplace.buyListing{value: 1 ether}(listingId);
 
-        // Arbitrary time: 12345 seconds late (about 3.4 hours)
+        // Arbitrary time: 12345 seconds late AFTER grace period (about 3.4 hours)
         uint256 arbitraryOverdue = 12345;
-        vm.warp(block.timestamp + 30 days + arbitraryOverdue);
+        vm.warp(block.timestamp + 30 days + 3 days + arbitraryOverdue);
 
         uint256 expectedPenalty = (1 ether * 500 * arbitraryOverdue) / (10000 * 2592000);
 
@@ -1350,16 +1350,16 @@ contract MarketplaceTest is Test {
         (uint256 lastPaymentTime,,) = marketplace.recurring(recurringLicenseId);
         uint256 paymentDue = lastPaymentTime + 30 days;
 
-        // Check penalty at 1 day late
-        vm.warp(paymentDue + 1 days);
+        // Check penalty at 1 day after grace period (4 days total late)
+        vm.warp(paymentDue + 3 days + 1 days);
         uint256 penaltyAt1Day = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
 
-        // Check penalty at 2 days late
-        vm.warp(paymentDue + 2 days);
+        // Check penalty at 2 days after grace period (5 days total late)
+        vm.warp(paymentDue + 3 days + 2 days);
         uint256 penaltyAt2Days = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
 
-        // Check penalty at 3 days late
-        vm.warp(paymentDue + 3 days);
+        // Check penalty at 3 days after grace period (6 days total late)
+        vm.warp(paymentDue + 3 days + 3 days);
         uint256 penaltyAt3Days = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
 
         // Penalty should scale linearly: 2 days = 2x penalty of 1 day, 3 days = 3x penalty of 1 day
@@ -1369,7 +1369,7 @@ contract MarketplaceTest is Test {
 
         // Verify penalties are non-zero and reasonable
         assertGt(penaltyAt1Day, 0);
-        assertLt(penaltyAt1Day, 0.01 ether); // Penalty for 1 day should be less than 1% of base (reasonable upper bound)
+        assertLt(penaltyAt1Day, 0.01 ether); // Penalty for 1 day after grace should be less than 1% of base (reasonable upper bound)
     }
 
     // ==================== ADMIN FUNCTION TESTS ====================
@@ -1532,6 +1532,352 @@ contract MarketplaceTest is Test {
         assertEq(ipAsset.ownerOf(ipTokenId), buyer);
 
         assertEq(marketplaceV2.newFeature(), "upgraded");
+    }
+
+    // ==================== PENALTY GRACE PERIOD TESTS ====================
+
+    function testNoPenaltyWithinGracePeriod() public {
+        // Create recurring license with 30-day interval
+        vm.prank(seller);
+        uint256 recurringLicenseId = ipAsset.mintLicense(
+            ipTokenId,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "recurring terms",
+            false,
+            30 days  // payment interval
+        );
+
+        // Set up listing and buy to initialize recurring payment tracking
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(
+            address(licenseToken),
+            recurringLicenseId,
+            1 ether,
+            false
+        );
+
+        vm.prank(other);
+        marketplace.buyListing{value: 1 ether}(listingId);
+
+        // Set penalty rate
+        vm.prank(admin);
+        marketplace.setPenaltyRate(500); // 5% per month
+
+        // Advance time to 1 day past due (within 3-day grace period)
+        uint256 dueDate = block.timestamp + 30 days;
+        vm.warp(dueDate + 1 days);
+
+        // Calculate penalty - should be 0 (within grace period)
+        uint256 penalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
+        assertEq(penalty, 0, "Penalty should be 0 within grace period");
+    }
+
+    function testNoPenaltyAtGracePeriodBoundary() public {
+        // Create recurring license
+        vm.prank(seller);
+        uint256 recurringLicenseId = ipAsset.mintLicense(
+            ipTokenId,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "recurring terms",
+            false,
+            30 days
+        );
+
+        // Set up recurring payment
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(
+            address(licenseToken),
+            recurringLicenseId,
+            1 ether,
+            false
+        );
+
+        vm.prank(other);
+        marketplace.buyListing{value: 1 ether}(listingId);
+
+        vm.prank(admin);
+        marketplace.setPenaltyRate(500);
+
+        // Advance time to exactly 3 days past due (at grace period boundary)
+        uint256 dueDate = block.timestamp + 30 days;
+        vm.warp(dueDate + 3 days);
+
+        // Calculate penalty - should still be 0 (at boundary)
+        uint256 penalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
+        assertEq(penalty, 0, "Penalty should be 0 at grace period boundary");
+    }
+
+    function testPenaltyAppliesAfterGracePeriod() public {
+        // Create recurring license
+        vm.prank(seller);
+        uint256 recurringLicenseId = ipAsset.mintLicense(
+            ipTokenId,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "recurring terms",
+            false,
+            30 days
+        );
+
+        // Set up recurring payment
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(
+            address(licenseToken),
+            recurringLicenseId,
+            1 ether,
+            false
+        );
+
+        vm.prank(other);
+        marketplace.buyListing{value: 1 ether}(listingId);
+
+        vm.prank(admin);
+        marketplace.setPenaltyRate(500); // 5% per month
+
+        // Advance time to 4 days past due (1 day after grace period)
+        uint256 dueDate = block.timestamp + 30 days;
+        vm.warp(dueDate + 4 days);
+
+        // Calculate penalty - should apply for 1 day
+        uint256 penalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
+
+        // Expected: baseAmount * penaltyRate * 1 day in seconds / (BASIS_POINTS * SECONDS_PER_MONTH)
+        uint256 baseAmount = 1 ether;
+        uint256 secondsLate = 1 days;
+        uint256 expectedPenalty = (baseAmount * 500 * secondsLate) / (10_000 * 2_592_000);
+
+        assertEq(penalty, expectedPenalty, "Penalty should apply only for time after grace period");
+        assertGt(penalty, 0, "Penalty should be greater than 0 after grace period");
+    }
+
+    function testPenaltyCalculationAfterGracePeriod() public {
+        // Create recurring license
+        vm.prank(seller);
+        uint256 recurringLicenseId = ipAsset.mintLicense(
+            ipTokenId,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "recurring terms",
+            false,
+            30 days
+        );
+
+        // Set up recurring payment
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(
+            address(licenseToken),
+            recurringLicenseId,
+            1 ether,
+            false
+        );
+
+        vm.prank(other);
+        marketplace.buyListing{value: 1 ether}(listingId);
+
+        vm.prank(admin);
+        marketplace.setPenaltyRate(500);
+
+        // Advance time to 10 days past due (7 days after grace period)
+        uint256 dueDate = block.timestamp + 30 days;
+        vm.warp(dueDate + 10 days);
+
+        // Calculate penalty - should apply for 7 days only
+        uint256 penalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
+
+        // Expected: baseAmount * penaltyRate * 7 days in seconds / (BASIS_POINTS * SECONDS_PER_MONTH)
+        uint256 baseAmount = 1 ether;
+        uint256 secondsLate = 7 days;
+        uint256 expectedPenalty = (baseAmount * 500 * secondsLate) / (10_000 * 2_592_000);
+
+        assertEq(penalty, expectedPenalty, "Penalty calculation should exclude grace period");
+    }
+
+    function testGracePeriodWithMultipleLatePayments() public {
+        vm.prank(admin);
+        marketplace.setPenaltyRate(500);
+
+        // Test 1: License with 2-day late payment (within grace period) - no penalty
+        vm.prank(seller);
+        uint256 license1 = ipAsset.mintLicense(
+            ipTokenId,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "recurring terms",
+            false,
+            30 days
+        );
+
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        bytes32 listing1 = marketplace.createListing(address(licenseToken), license1, 1 ether, false);
+
+        vm.prank(other);
+        marketplace.buyListing{value: 1 ether}(listing1);
+
+        vm.warp(block.timestamp + 30 days + 2 days);
+        uint256 penalty1 = marketplace.calculatePenalty(address(licenseToken), license1);
+        assertEq(penalty1, 0, "Payment 2 days late within grace period should have no penalty");
+
+        // Test 2: License with 5-day late payment (2 days after grace) - has penalty
+        vm.prank(seller);
+        uint256 license2 = ipAsset.mintLicense(
+            ipTokenId,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "recurring terms",
+            false,
+            30 days
+        );
+
+        vm.prank(buyer);
+        bytes32 listing2 = marketplace.createListing(address(licenseToken), license2, 1 ether, false);
+
+        vm.prank(other);
+        marketplace.buyListing{value: 1 ether}(listing2);
+
+        vm.warp(block.timestamp + 30 days + 5 days);
+        uint256 penalty2 = marketplace.calculatePenalty(address(licenseToken), license2);
+        assertGt(penalty2, 0, "Payment 5 days late (2 after grace) should have penalty");
+    }
+
+    function testEdgeCaseExactlyAtGracePeriod() public {
+        // Create recurring license
+        vm.prank(seller);
+        uint256 recurringLicenseId = ipAsset.mintLicense(
+            ipTokenId,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "recurring terms",
+            false,
+            30 days
+        );
+
+        // Set up recurring payment
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(
+            address(licenseToken),
+            recurringLicenseId,
+            1 ether,
+            false
+        );
+
+        vm.prank(other);
+        marketplace.buyListing{value: 1 ether}(listingId);
+
+        vm.prank(admin);
+        marketplace.setPenaltyRate(500);
+
+        uint256 dueDate = block.timestamp + 30 days;
+
+        // Test at exactly grace period end (3 days + 1 second should have penalty)
+        vm.warp(dueDate + 3 days);
+        assertEq(marketplace.calculatePenalty(address(licenseToken), recurringLicenseId), 0, "At grace period end should be 0");
+
+        // One second after grace period
+        vm.warp(dueDate + 3 days + 1 seconds);
+        assertGt(marketplace.calculatePenalty(address(licenseToken), recurringLicenseId), 0, "After grace period should have penalty");
+    }
+
+    function testBackwardCompatibility() public {
+        // Verify existing penalty tests still work with grace period
+        // This test ensures the grace period doesn't break existing functionality
+
+        // Create recurring license
+        vm.prank(seller);
+        uint256 recurringLicenseId = ipAsset.mintLicense(
+            ipTokenId,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "recurring terms",
+            false,
+            30 days
+        );
+
+        // Set up recurring payment
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(
+            address(licenseToken),
+            recurringLicenseId,
+            1 ether,
+            false
+        );
+
+        vm.prank(other);
+        marketplace.buyListing{value: 1 ether}(listingId);
+
+        vm.prank(admin);
+        marketplace.setPenaltyRate(500);
+
+        // Test penalties scale correctly after grace period
+        // Get the actual payment time from the contract
+        (uint256 lastPaymentTime,,) = marketplace.recurring(recurringLicenseId);
+        uint256 paymentDue = lastPaymentTime + 30 days;
+
+        // 4 days late (1 day after grace) = 1 day penalty
+        vm.warp(paymentDue + 3 days + 1 days);
+        uint256 penalty1 = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
+
+        // 5 days late (2 days after grace) = 2 days penalty
+        vm.warp(paymentDue + 3 days + 2 days);
+        uint256 penalty2 = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
+
+        // 6 days late (3 days after grace) = 3 days penalty
+        vm.warp(paymentDue + 3 days + 3 days);
+        uint256 penalty3 = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
+
+        // Penalties should scale linearly
+        assertGt(penalty2, penalty1, "Penalty should increase with time");
+        assertGt(penalty3, penalty2, "Penalty should continue to increase");
+
+        // Check linear scaling
+        assertApproxEqAbs(penalty2, penalty1 * 2, penalty1 / 100, "Penalties should scale linearly");
+        assertApproxEqAbs(penalty3, penalty1 * 3, penalty1 / 100, "Penalties should scale linearly");
     }
 }
 
