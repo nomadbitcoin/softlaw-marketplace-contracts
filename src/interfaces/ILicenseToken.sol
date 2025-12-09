@@ -21,6 +21,7 @@ interface ILicenseToken {
      * @param publicMetadataURI Publicly accessible metadata URI
      * @param privateMetadataURI Private metadata URI (access controlled)
      * @param paymentInterval Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)
+     * @param maxMissedPayments Maximum number of missed payments before auto-revocation (1-255)
      */
     struct License {
         uint256 ipAssetId;
@@ -32,6 +33,7 @@ interface ILicenseToken {
         string publicMetadataURI;
         string privateMetadataURI;
         uint256 paymentInterval;
+        uint8 maxMissedPayments;
     }
 
     // ==================== CUSTOM ERRORS ====================
@@ -80,6 +82,9 @@ interface ILicenseToken {
 
     /// @notice Thrown when attempting to set IP asset contract to zero address
     error InvalidIPAssetAddress();
+
+    /// @notice Thrown when maxMissedPayments is zero or exceeds allowed maximum
+    error InvalidMaxMissedPayments();
 
     // ==================== EVENTS ====================
 
@@ -178,6 +183,7 @@ interface ILicenseToken {
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
      * @param paymentInterval Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)
+     * @param maxMissedPayments Maximum missed payments before auto-revocation (0 = use DEFAULT_MAX_MISSED_PAYMENTS)
      * @return licenseId The ID of the newly minted license
      */
     function mintLicense(
@@ -189,7 +195,8 @@ interface ILicenseToken {
         uint256 expiryTime,
         string memory terms,
         bool isExclusive,
-        uint256 paymentInterval
+        uint256 paymentInterval,
+        uint8 maxMissedPayments
     ) external returns (uint256 licenseId);
 
     /**
@@ -359,4 +366,11 @@ interface ILicenseToken {
      * @return active True if license is not revoked and not expired
      */
     function isActiveLicense(uint256 licenseId) external view returns (bool active);
+
+    /**
+     * @notice Gets the maximum number of missed payments allowed for a license
+     * @param licenseId The license ID
+     * @return maxMissed Maximum number of missed payments before auto-revocation
+     */
+    function getMaxMissedPayments(uint256 licenseId) external view returns (uint8 maxMissed);
 }

@@ -21,6 +21,9 @@ contract LicenseToken is
     bytes32 public constant IP_ASSET_ROLE = keccak256("IP_ASSET_ROLE");
     bytes32 public constant MARKETPLACE_ROLE = keccak256("MARKETPLACE_ROLE");
 
+    /// @notice Default maximum number of missed payments before auto-revocation (3 payments)
+    uint8 public constant DEFAULT_MAX_MISSED_PAYMENTS = 3;
+
     mapping(uint256 => License) public licenses;
     mapping(uint256 => bool) private _isExpired;
     mapping(uint256 => bool) private _hasExclusiveLicense;
@@ -63,7 +66,8 @@ contract LicenseToken is
         uint256 expiryTime,
         string memory terms,
         bool isExclusive,
-        uint256 paymentInterval
+        uint256 paymentInterval,
+        uint8 maxMissedPayments
     ) external onlyRole(IP_ASSET_ROLE) whenNotPaused returns (uint256) {
         try IIPAsset(ipAssetContract).hasActiveDispute(ipAssetId) returns (bool) {
             // Validate IP asset exists by checking if it has an active dispute status
@@ -79,6 +83,11 @@ contract LicenseToken is
             _hasExclusiveLicense[ipAssetId] = true;
         }
 
+        // Use default if 0 is passed
+        if (maxMissedPayments == 0) {
+            maxMissedPayments = DEFAULT_MAX_MISSED_PAYMENTS;
+        }
+
         uint256 licenseId = _licenseIdCounter++;
 
         licenses[licenseId] = License({
@@ -90,7 +99,8 @@ contract LicenseToken is
             isRevoked: false,
             publicMetadataURI: publicMetadataURI,
             privateMetadataURI: privateMetadataURI,
-            paymentInterval: paymentInterval
+            paymentInterval: paymentInterval,
+            maxMissedPayments: maxMissedPayments
         });
 
         _mint(to, licenseId, supply, "");
@@ -135,7 +145,8 @@ contract LicenseToken is
     }
 
     function revokeForMissedPayments(uint256 licenseId, uint256 missedCount) external onlyRole(MARKETPLACE_ROLE) {
-        if (missedCount <= 3) revert InsufficientMissedPayments();
+        uint8 maxAllowed = licenses[licenseId].maxMissedPayments;
+        if (missedCount < maxAllowed) revert InsufficientMissedPayments();
         _revoke(licenseId);
         emit AutoRevoked(licenseId, missedCount);
     }
@@ -269,6 +280,10 @@ contract LicenseToken is
 
     function isActiveLicense(uint256 licenseId) external view returns (bool) {
         return !licenses[licenseId].isRevoked && !_isExpired[licenseId];
+    }
+
+    function getMaxMissedPayments(uint256 licenseId) external view returns (uint8) {
+        return licenses[licenseId].maxMissedPayments;
     }
 
     function _update(address from, address to, uint256[] memory ids, uint256[] memory values)

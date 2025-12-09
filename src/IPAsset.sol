@@ -29,6 +29,7 @@ contract IPAsset is
     mapping(uint256 => string) private _metadataURIs;
     mapping(uint256 => uint256) public activeLicenseCount;
     mapping(uint256 => bool) private _hasActiveDispute;
+    mapping(uint256 => string) private _privateMetadata;
 
     constructor() {
         _disableInitializers();
@@ -78,6 +79,7 @@ contract IPAsset is
         if (licensee == address(0)) revert InvalidAddress();
 
         // Call LicenseToken to mint the actual license
+        // Using 0 for maxMissedPayments to apply DEFAULT_MAX_MISSED_PAYMENTS (3)
         uint256 licenseId = ILicenseToken(licenseTokenContract).mintLicense(
             licensee,
             ipTokenId,
@@ -87,7 +89,8 @@ contract IPAsset is
             expiryTime,
             terms,
             isExclusive,
-            paymentInterval
+            paymentInterval,
+            0   // maxMissedPayments: 0 = use default (3)
         );
 
         emit LicenseRegistered(ipTokenId, licenseId, licensee, supply, isExclusive);
@@ -176,6 +179,17 @@ contract IPAsset is
 
     function hasActiveDispute(uint256 tokenId) external view returns (bool) {
         return _hasActiveDispute[tokenId];
+    }
+
+    function setPrivateMetadata(uint256 tokenId, string memory metadata) external whenNotPaused {
+        if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+        _privateMetadata[tokenId] = metadata;
+        emit PrivateMetadataUpdated(tokenId);
+    }
+
+    function getPrivateMetadata(uint256 tokenId) external view returns (string memory) {
+        if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+        return _privateMetadata[tokenId];
     }
 
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {

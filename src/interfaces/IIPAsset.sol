@@ -86,6 +86,13 @@ interface IIPAsset {
      */
     event RevenueDistributorSet(address indexed newContract);
 
+    /**
+     * @notice Emitted when private metadata is updated for an IP asset
+     * @dev The metadata content is not included in the event for privacy
+     * @param tokenId The ID of the IP asset
+     */
+    event PrivateMetadataUpdated(uint256 indexed tokenId);
+
     // ==================== ERRORS ====================
 
     /// @notice Thrown when attempting to mint to zero address
@@ -263,4 +270,20 @@ interface IIPAsset {
      * @dev Only callable by DEFAULT_ADMIN_ROLE
      */
     function unpause() external;
+
+    /**
+     * @notice Sets private metadata for an IP asset
+     * @dev Only the IP asset owner can set private metadata
+     * @param tokenId The ID of the IP asset
+     * @param metadata The private metadata URI (IPFS, HTTP, etc.)
+     */
+    function setPrivateMetadata(uint256 tokenId, string memory metadata) external;
+
+    /**
+     * @notice Gets private metadata for an IP asset
+     * @dev Only the IP asset owner can read private metadata
+     * @param tokenId The ID of the IP asset
+     * @return metadata The private metadata URI
+     */
+    function getPrivateMetadata(uint256 tokenId) external view returns (string memory);
 }

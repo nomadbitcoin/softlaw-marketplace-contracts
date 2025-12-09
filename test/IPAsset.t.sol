@@ -736,5 +736,122 @@ contract IPAssetTest is Test {
         vm.prank(admin);
         ipAsset.setRevenueDistributorContract(newDistributor); // Should succeed
     }
+
+    // ============ Story 6.1: Private Metadata for IPAsset ============
+
+    function testSetPrivateMetadataAsCreator() public {
+        // Mint IP as creator
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://public-metadata");
+
+        // Creator sets private metadata
+        vm.prank(creator);
+        ipAsset.setPrivateMetadata(tokenId, "ipfs://private-secret");
+
+        // Verify storage
+        vm.prank(creator);
+        string memory retrieved = ipAsset.getPrivateMetadata(tokenId);
+        assertEq(retrieved, "ipfs://private-secret");
+    }
+
+    function testGetPrivateMetadataAsCreator() public {
+        // Mint IP as creator
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://public");
+
+        // Set private metadata
+        vm.prank(creator);
+        ipAsset.setPrivateMetadata(tokenId, "ipfs://private-data");
+
+        // Creator can read their own private metadata
+        vm.prank(creator);
+        string memory retrieved = ipAsset.getPrivateMetadata(tokenId);
+        assertEq(retrieved, "ipfs://private-data");
+    }
+
+    function testUnauthorizedSetPrivateMetadataReverts() public {
+        // Mint IP as creator
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://public");
+
+        // Non-owner attempts to set private metadata (should revert)
+        vm.prank(other);
+        vm.expectRevert(IIPAsset.NotTokenOwner.selector);
+        ipAsset.setPrivateMetadata(tokenId, "ipfs://malicious");
+    }
+
+    function testUnauthorizedGetPrivateMetadataReverts() public {
+        // Mint IP as creator
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://public");
+
+        // Set private metadata
+        vm.prank(creator);
+        ipAsset.setPrivateMetadata(tokenId, "ipfs://private");
+
+        // Non-owner attempts to read (should revert)
+        vm.prank(other);
+        vm.expectRevert(IIPAsset.NotTokenOwner.selector);
+        ipAsset.getPrivateMetadata(tokenId);
+    }
+
+    function testPrivateMetadataUpdates() public {
+        // Mint IP
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://public");
+
+        // Set initial private metadata
+        vm.prank(creator);
+        ipAsset.setPrivateMetadata(tokenId, "ipfs://private-v1");
+
+        // Update private metadata
+        vm.prank(creator);
+        ipAsset.setPrivateMetadata(tokenId, "ipfs://private-v2");
+
+        // Verify updated value
+        vm.prank(creator);
+        string memory retrieved = ipAsset.getPrivateMetadata(tokenId);
+        assertEq(retrieved, "ipfs://private-v2");
+    }
+
+    function testPrivateMetadataEventEmission() public {
+        // Mint IP
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://public");
+
+        // Expect event emission (without metadata for privacy)
+        vm.prank(creator);
+        vm.expectEmit(true, false, false, false);
+        emit IIPAsset.PrivateMetadataUpdated(tokenId);
+        ipAsset.setPrivateMetadata(tokenId, "ipfs://private-secret");
+    }
+
+    function testPrivateMetadataSeparateFromPublic() public {
+        // Mint IP with public metadata
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://public-metadata");
+
+        // Set private metadata
+        vm.prank(creator);
+        ipAsset.setPrivateMetadata(tokenId, "ipfs://private-metadata");
+
+        // Verify public metadata unchanged
+        string memory publicMetadata = ipAsset.tokenURI(tokenId);
+        assertEq(publicMetadata, "ipfs://public-metadata");
+
+        // Verify private metadata stored separately
+        vm.prank(creator);
+        string memory privateMetadata = ipAsset.getPrivateMetadata(tokenId);
+        assertEq(privateMetadata, "ipfs://private-metadata");
+
+        // Update public metadata
+        vm.prank(creator);
+        ipAsset.updateMetadata(tokenId, "ipfs://public-metadata-v2");
+
+        // Verify private metadata still unchanged
+        vm.prank(creator);
+        string memory privateMetadataAfter = ipAsset.getPrivateMetadata(tokenId);
+        assertEq(privateMetadataAfter, "ipfs://private-metadata");
+    }
 }
 
