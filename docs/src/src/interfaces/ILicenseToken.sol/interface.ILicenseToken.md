@@ -1,5 +1,5 @@
 # ILicenseToken
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/deaf418b415477f4b81161589e5d319de1e2522a/src/interfaces/ILicenseToken.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/interfaces/ILicenseToken.sol)
 
 Interface for License Token contract (ERC-1155 semi-fungible tokens)
 
@@ -15,15 +15,13 @@ Initializes the LicenseToken contract (proxy pattern)
 
 *Sets up ERC1155, AccessControl, and contract references*
 
+*Grants DEFAULT_ADMIN_ROLE, ARBITRATOR_ROLE, and IP_ASSET_ROLE*
+
+*Can only be called once due to initializer modifier*
+
 
 ```solidity
-function initialize(
-    string memory baseURI,
-    address admin,
-    address ipAsset,
-    address arbitrator,
-    address revenueDistributor
-) external;
+function initialize(string memory baseURI, address admin, address ipAsset, address arbitrator) external;
 ```
 **Parameters**
 
@@ -31,16 +29,27 @@ function initialize(
 |----|----|-----------|
 |`baseURI`|`string`|Base URI for token metadata|
 |`admin`|`address`|Address to receive all initial admin roles|
-|`ipAsset`|`address`|Address of the IPAsset contract|
-|`arbitrator`|`address`|Address of the GovernanceArbitrator contract|
-|`revenueDistributor`|`address`|Address of the RevenueDistributor contract|
+|`ipAsset`|`address`|Address of the IPAsset contract (granted IP_ASSET_ROLE)|
+|`arbitrator`|`address`|Address of the GovernanceArbitrator contract (granted ARBITRATOR_ROLE)|
 
 
 ### mintLicense
 
 Mints a new license token
 
-*Only callable by IP asset owner through IPAsset contract*
+*Only callable by IP_ASSET_ROLE through IPAsset contract*
+
+*Validates IP asset exists via hasActiveDispute() call*
+
+*Exclusive licenses must have supply = 1 and only one can exist per IP asset*
+
+*If maxMissedPayments = 0, defaults to DEFAULT_MAX_MISSED_PAYMENTS (3)*
+
+*If penaltyRateBPS = 0, defaults to DEFAULT_PENALTY_RATE (500)*
+
+*penaltyRateBPS must be <= MAX_PENALTY_RATE (5000)*
+
+*Updates IP asset active license count*
 
 
 ```solidity
@@ -53,7 +62,9 @@ function mintLicense(
     uint256 expiryTime,
     string memory terms,
     bool isExclusive,
-    uint256 paymentInterval
+    uint256 paymentInterval,
+    uint8 maxMissedPayments,
+    uint16 penaltyRateBPS
 ) external returns (uint256 licenseId);
 ```
 **Parameters**
@@ -62,13 +73,15 @@ function mintLicense(
 |----|----|-----------|
 |`to`|`address`|Address to receive the license|
 |`ipAssetId`|`uint256`|The IP asset to license|
-|`supply`|`uint256`|Number of license tokens to mint (ERC-1155 supply)|
+|`supply`|`uint256`|Number of license tokens to mint (must be 1 for exclusive licenses)|
 |`publicMetadataURI`|`string`|Publicly accessible metadata|
 |`privateMetadataURI`|`string`|Private metadata (access controlled)|
-|`expiryTime`|`uint256`|Unix timestamp when license expires|
+|`expiryTime`|`uint256`|Unix timestamp when license expires (0 = perpetual)|
 |`terms`|`string`|Human-readable license terms|
 |`isExclusive`|`bool`|Whether this is an exclusive license|
 |`paymentInterval`|`uint256`|Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)|
+|`maxMissedPayments`|`uint8`|Maximum missed payments before auto-revocation (0 = use DEFAULT_MAX_MISSED_PAYMENTS)|
+|`penaltyRateBPS`|`uint16`|Penalty rate in basis points per month (0 = use DEFAULT_PENALTY_RATE, max = MAX_PENALTY_RATE)|
 
 **Returns**
 
@@ -82,6 +95,10 @@ function mintLicense(
 Marks a license as expired
 
 *Can be called by anyone once expiry time has passed*
+
+*Perpetual licenses (expiryTime = 0) cannot be expired*
+
+*Updates IP asset active license count*
 
 
 ```solidity
@@ -97,6 +114,8 @@ function markExpired(uint256 licenseId) external;
 ### batchMarkExpired
 
 Marks multiple licenses as expired in a single transaction
+
+*Continues on error - does not revert entire batch if individual license fails*
 
 
 ```solidity
@@ -115,6 +134,10 @@ Revokes a license
 
 *Only callable by ARBITRATOR_ROLE (dispute resolution)*
 
+*Clears exclusive license flag if applicable*
+
+*Updates IP asset active license count*
+
 
 ```solidity
 function revokeLicense(uint256 licenseId, string memory reason) external;
@@ -131,11 +154,15 @@ function revokeLicense(uint256 licenseId, string memory reason) external;
 
 Revokes a license for missed payments
 
-*Only callable by MARKETPLACE_ROLE*
+*Anyone can call this function, but it will only succeed if missedCount >= maxMissedPayments*
 
 *Payment tracking is handled by Marketplace contract*
 
-*Marketplace calculates missed payments and calls this function when threshold exceeded*
+*Spam prevention: built-in validation requires missedCount to meet threshold*
+
+*Clears exclusive license flag if applicable*
+
+*Updates IP asset active license count*
 
 
 ```solidity
@@ -146,7 +173,7 @@ function revokeForMissedPayments(uint256 licenseId, uint256 missedCount) externa
 |Name|Type|Description|
 |----|----|-----------|
 |`licenseId`|`uint256`|The license to revoke|
-|`missedCount`|`uint256`|Number of missed payments (must be > 3)|
+|`missedCount`|`uint256`|Number of missed payments (must meet maxMissedPayments threshold)|
 
 
 ### getPublicMetadata
@@ -174,7 +201,7 @@ function getPublicMetadata(uint256 licenseId) external view returns (string memo
 
 Gets the private metadata URI for a license
 
-*Access controlled - only license holder and granted accounts*
+*Access controlled - only license holder, granted accounts, and admin*
 
 
 ```solidity
@@ -297,7 +324,9 @@ function isExpired(uint256 licenseId) external view returns (bool expired);
 
 Updates the GovernanceArbitrator contract address
 
-*Only callable by admin*
+*Only callable by DEFAULT_ADMIN_ROLE*
+
+*Revokes ARBITRATOR_ROLE from old address and grants to new address*
 
 
 ```solidity
@@ -307,14 +336,16 @@ function setArbitratorContract(address arbitrator) external;
 
 |Name|Type|Description|
 |----|----|-----------|
-|`arbitrator`|`address`|New arbitrator contract address|
+|`arbitrator`|`address`|New arbitrator contract address (cannot be zero address)|
 
 
 ### setIPAssetContract
 
 Updates the IPAsset contract address
 
-*Only callable by admin*
+*Only callable by DEFAULT_ADMIN_ROLE*
+
+*Revokes IP_ASSET_ROLE from old address and grants to new address*
 
 
 ```solidity
@@ -324,7 +355,7 @@ function setIPAssetContract(address ipAsset) external;
 
 |Name|Type|Description|
 |----|----|-----------|
-|`ipAsset`|`address`|New IP asset contract address|
+|`ipAsset`|`address`|New IP asset contract address (cannot be zero address)|
 
 
 ### grantRole
@@ -490,6 +521,48 @@ function isActiveLicense(uint256 licenseId) external view returns (bool active);
 |Name|Type|Description|
 |----|----|-----------|
 |`active`|`bool`|True if license is not revoked and not expired|
+
+
+### getMaxMissedPayments
+
+Gets the maximum number of missed payments allowed for a license
+
+
+```solidity
+function getMaxMissedPayments(uint256 licenseId) external view returns (uint8 maxMissed);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`licenseId`|`uint256`|The license ID|
+
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`maxMissed`|`uint8`|Maximum number of missed payments before auto-revocation|
+
+
+### getPenaltyRate
+
+Gets the penalty rate for a license
+
+
+```solidity
+function getPenaltyRate(uint256 licenseId) external view returns (uint16 penaltyRate);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`licenseId`|`uint256`|The license ID|
+
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`penaltyRate`|`uint16`|Penalty rate in basis points (100 bps = 1% per month)|
 
 
 ## Events
@@ -742,6 +815,22 @@ Thrown when attempting to set IP asset contract to zero address
 error InvalidIPAssetAddress();
 ```
 
+### InvalidMaxMissedPayments
+Thrown when maxMissedPayments is zero or exceeds allowed maximum
+
+
+```solidity
+error InvalidMaxMissedPayments();
+```
+
+### InvalidPenaltyRate
+Thrown when penalty rate exceeds maximum allowed rate
+
+
+```solidity
+error InvalidPenaltyRate();
+```
+
 ## Structs
 ### License
 *License configuration and state*
@@ -758,6 +847,8 @@ struct License {
     string publicMetadataURI;
     string privateMetadataURI;
     uint256 paymentInterval;
+    uint8 maxMissedPayments;
+    uint16 penaltyRateBPS;
 }
 ```
 
@@ -774,4 +865,6 @@ struct License {
 |`publicMetadataURI`|`string`|Publicly accessible metadata URI|
 |`privateMetadataURI`|`string`|Private metadata URI (access controlled)|
 |`paymentInterval`|`uint256`|Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)|
+|`maxMissedPayments`|`uint8`|Maximum number of missed payments before auto-revocation (1-255, 0 defaults to 3)|
+|`penaltyRateBPS`|`uint16`|Penalty rate in basis points (100 bps = 1% per month, 0 defaults to 500, max 5000 = 50%)|
 

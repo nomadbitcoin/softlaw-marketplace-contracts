@@ -1,5 +1,5 @@
 # Marketplace
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/deaf418b415477f4b81161589e5d319de1e2522a/src/Marketplace.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/Marketplace.sol)
 
 **Inherits:**
 [IMarketplace](/src/interfaces/IMarketplace.sol/interface.IMarketplace.md), Initializable, UUPSUpgradeable, AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable
@@ -31,6 +31,13 @@ uint256 public constant SECONDS_PER_MONTH = 2_592_000;
 
 ```solidity
 uint256 public constant MAX_MISSED_PAYMENTS = 3;
+```
+
+
+### PENALTY_GRACE_PERIOD
+
+```solidity
+uint256 public constant PENALTY_GRACE_PERIOD = 3 days;
 ```
 
 
@@ -144,7 +151,7 @@ function _transferNFT(address nftContract, address from, address to, uint256 tok
 
 
 ```solidity
-function _distributePayment(uint256 ipAssetId, uint256 totalAmount) internal;
+function _distributePayment(uint256 ipAssetId, uint256 totalAmount, address seller) internal;
 ```
 
 ### cancelOffer

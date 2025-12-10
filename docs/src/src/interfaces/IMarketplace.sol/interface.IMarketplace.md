@@ -1,5 +1,5 @@
 # IMarketplace
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/deaf418b415477f4b81161589e5d319de1e2522a/src/interfaces/IMarketplace.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/interfaces/IMarketplace.sol)
 
 Interface for NFT marketplace with listings and offers
 
@@ -257,6 +257,10 @@ Calculates the current penalty for late payment
 
 *Returns 0 if payment is not overdue or for ONE_TIME licenses*
 
+*No penalty if within PENALTY_GRACE_PERIOD (3 days) of dueDate*
+
+*Penalties only start accruing after dueDate + PENALTY_GRACE_PERIOD*
+
 
 ```solidity
 function calculatePenalty(address licenseContract, uint256 licenseId) external view returns (uint256 penalty);
@@ -272,7 +276,7 @@ function calculatePenalty(address licenseContract, uint256 licenseId) external v
 
 |Name|Type|Description|
 |----|----|-----------|
-|`penalty`|`uint256`|Penalty amount in wei|
+|`penalty`|`uint256`|Penalty amount in wei (0 if within grace period)|
 
 
 ### getTotalPaymentDue

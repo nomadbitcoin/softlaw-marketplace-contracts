@@ -1,9 +1,9 @@
 # IGovernanceArbitrator
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/deaf418b415477f4b81161589e5d319de1e2522a/src/interfaces/IGovernanceArbitrator.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/interfaces/IGovernanceArbitrator.sol)
 
-Interface for dispute resolution and governance
+Interface for third-party dispute arbitration (no governance)
 
-*Manages disputes for licenses with 30-day resolution deadline*
+*Manages license disputes with 30-day resolution deadline via designated arbitrators*
 
 
 ## Functions

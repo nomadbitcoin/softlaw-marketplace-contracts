@@ -2,9 +2,18 @@
 
 How payments are distributed through the system.
 
+## Primary vs Secondary Sales
+
+**The system automatically detects whether a sale is primary or secondary:**
+
+- **Primary Sale**: Seller is in the split recipients → Platform fee applies
+- **Secondary Sale**: Seller is NOT in split recipients → Royalty fee applies
+
+This detection happens automatically in `distributePayment()` based on the seller address.
+
 ## Payment Distribution Overview
 
-RevenueDistributor handles payment splitting in two steps: platform fee deduction, then revenue split.
+RevenueDistributor handles payment splitting differently for primary and secondary sales:
 
 ```mermaid
 graph TB
@@ -53,13 +62,23 @@ graph TB
 
 ### Distribution Rules
 
+**For Primary Sales** (seller is in split recipients):
 1. **Platform fee** is calculated on total amount and deducted first (e.g., 2.5%)
 2. **If revenue split configured**, remaining amount split by shares (must sum to 100%)
 3. **If no split configured**, all remaining amount goes to IP asset owner
+
+**For Secondary Sales** (seller NOT in split recipients):
+1. **Royalty fee** is calculated on total amount (default or per-asset custom rate)
+2. **Royalty amount** is distributed according to revenue split configuration
+3. **Remaining amount** goes to the seller (not in split recipients)
+
+**General Rules**:
 4. **Balances accumulate** until recipient calls withdraw()
 5. **Pull-based withdrawals** - recipients control when to withdraw
 
-## Sale Payment Flow
+## Primary Sale Payment Flow
+
+When the seller is in the split recipients (e.g., IP owner selling their first license):
 
 ```mermaid
 sequenceDiagram
@@ -67,11 +86,13 @@ sequenceDiagram
     participant MP as Marketplace
     participant RD as RevenueDistributor
     participant Treasury
-    participant IPOwner as IP Owner
+    participant IPOwner as IP Owner (Seller)
     participant Collaborator
 
     Buyer->>MP: buyListing() + 1000 ETH
-    MP->>RD: distributePayment(ipAssetId, 1000) + 1000 ETH
+    MP->>RD: distributePayment(ipAssetId, 1000, ipOwner) + 1000 ETH
+
+    Note over RD: AUTO-DETECT: Seller IS in split recipients<br/>→ PRIMARY SALE
 
     Note over RD: Platform fee = 2.5% (25 ETH)
     Note over RD: Net amount = 975 ETH
@@ -95,6 +116,48 @@ sequenceDiagram
 
     Treasury->>RD: withdraw()
     RD->>Treasury: Transfer 25 ETH
+```
+
+## Secondary Sale Payment Flow
+
+When the seller is NOT in the split recipients (e.g., licensee reselling their license):
+
+```mermaid
+sequenceDiagram
+    participant Buyer
+    participant MP as Marketplace
+    participant Seller as Licensee (Seller)
+    participant RD as RevenueDistributor
+    participant IPOwner as IP Owner
+    participant Collaborator
+
+    Buyer->>MP: buyListing() + 1000 ETH
+    MP->>RD: distributePayment(ipAssetId, 1000, seller) + 1000 ETH
+
+    Note over RD: AUTO-DETECT: Seller NOT in split recipients<br/>→ SECONDARY SALE
+
+    Note over RD: Royalty rate = 10% (100 ETH)
+    Note over RD: Seller gets = 900 ETH
+
+    RD->>RD: balances[seller] += 900 ETH
+
+    Note over RD: Royalty split by configured shares:<br/>IP Owner: 70%<br/>Collaborator: 30%
+
+    RD->>RD: balances[ipOwner] += 70 ETH (70% of royalty)
+    RD->>RD: balances[collaborator] += 30 ETH (30% of royalty)
+
+    RD-->>MP: Payment distributed
+
+    Note over Seller,Collaborator: Later, recipients withdraw
+
+    Seller->>RD: withdraw()
+    RD->>Seller: Transfer 900 ETH
+
+    IPOwner->>RD: withdraw()
+    RD->>IPOwner: Transfer 70 ETH
+
+    Collaborator->>RD: withdraw()
+    RD->>Collaborator: Transfer 30 ETH
 ```
 
 ## Recurring Payment Flow
@@ -153,6 +216,25 @@ graph LR
 - No recipient address can be zero address
 - At least one recipient required
 - Split can only be configured by IP owner or `CONFIGURATOR_ROLE`
+
+## Royalty Configuration
+
+Royalty rates can be set globally (default) or per IP asset:
+
+**Default Royalty**:
+- Applied to all IP assets unless overridden
+- Set by admin via `setDefaultRoyalty(basisPoints)`
+- Example: 1000 basis points = 10%
+
+**Per-Asset Royalty**:
+- Custom royalty for specific IP assets
+- Set by CONFIGURATOR_ROLE via `setAssetRoyalty(ipAssetId, basisPoints)`
+- Overrides default royalty
+- Example: High-value IP might have 1500 bp (15%), while others use default
+
+**Querying Royalty**:
+- Use `getAssetRoyalty(ipAssetId)` to get effective rate (custom or default)
+- Returns custom rate if set, otherwise returns default rate
 
 ## Withdrawal Pattern
 

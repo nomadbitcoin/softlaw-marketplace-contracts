@@ -1,5 +1,5 @@
 # LicenseToken
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/deaf418b415477f4b81161589e5d319de1e2522a/src/LicenseToken.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/LicenseToken.sol)
 
 **Inherits:**
 [ILicenseToken](/src/interfaces/ILicenseToken.sol/interface.ILicenseToken.md), Initializable, ERC1155Upgradeable, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable
@@ -24,6 +24,27 @@ bytes32 public constant IP_ASSET_ROLE = keccak256("IP_ASSET_ROLE");
 
 ```solidity
 bytes32 public constant MARKETPLACE_ROLE = keccak256("MARKETPLACE_ROLE");
+```
+
+
+### DEFAULT_MAX_MISSED_PAYMENTS
+
+```solidity
+uint8 public constant DEFAULT_MAX_MISSED_PAYMENTS = 3;
+```
+
+
+### DEFAULT_PENALTY_RATE
+
+```solidity
+uint16 public constant DEFAULT_PENALTY_RATE = 500;
+```
+
+
+### MAX_PENALTY_RATE
+
+```solidity
+uint16 public constant MAX_PENALTY_RATE = 5000;
 ```
 
 
@@ -79,9 +100,6 @@ address public arbitratorContract;
 ## Functions
 ### constructor
 
-**Note:**
-oz-upgrades-unsafe-allow: constructor
-
 
 ```solidity
 constructor();
@@ -91,13 +109,7 @@ constructor();
 
 
 ```solidity
-function initialize(
-    string memory baseURI,
-    address admin,
-    address ipAsset,
-    address arbitrator,
-    address revenueDistributor
-) external initializer;
+function initialize(string memory baseURI, address admin, address ipAsset, address arbitrator) external initializer;
 ```
 
 ### mintLicense
@@ -113,7 +125,9 @@ function mintLicense(
     uint256 expiryTime,
     string memory terms,
     bool isExclusive,
-    uint256 paymentInterval
+    uint256 paymentInterval,
+    uint8 maxMissedPayments,
+    uint16 penaltyRateBPS
 ) external onlyRole(IP_ASSET_ROLE) whenNotPaused returns (uint256);
 ```
 
@@ -142,7 +156,7 @@ function revokeLicense(uint256 licenseId, string memory reason) external onlyRol
 
 
 ```solidity
-function revokeForMissedPayments(uint256 licenseId, uint256 missedCount) external onlyRole(MARKETPLACE_ROLE);
+function revokeForMissedPayments(uint256 licenseId, uint256 missedCount) external;
 ```
 
 ### _revoke
@@ -281,6 +295,20 @@ function getLicenseInfo(uint256 licenseId)
 
 ```solidity
 function isActiveLicense(uint256 licenseId) external view returns (bool);
+```
+
+### getMaxMissedPayments
+
+
+```solidity
+function getMaxMissedPayments(uint256 licenseId) external view returns (uint8);
+```
+
+### getPenaltyRate
+
+
+```solidity
+function getPenaltyRate(uint256 licenseId) external view returns (uint16);
 ```
 
 ### _update

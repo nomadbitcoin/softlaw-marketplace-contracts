@@ -10,7 +10,7 @@ stateDiagram-v2
 
     Active --> Expired: expiryTime passed<br/>markExpired()
     Active --> Revoked: Dispute approved<br/>revokeLicense()
-    Active --> Revoked: >= 3 missed payments<br/>revokeForMissedPayments()
+    Active --> Revoked: >= maxMissedPayments<br/>revokeForMissedPayments()
 
     Expired --> [*]
     Revoked --> [*]
@@ -178,7 +178,10 @@ stateDiagram-v2
     [*] --> Current: Initial payment
 
     Current --> Current: makeRecurringPayment()<br/>on time
-    Current --> LateOnce: 1 missed payment
+    Current --> GracePeriod: Payment overdue<br/>(within 3 days)
+
+    GracePeriod --> Current: makeRecurringPayment()<br/>no penalty (within grace)
+    GracePeriod --> LateOnce: Grace period expires<br/>(> 3 days overdue)
 
     LateOnce --> Current: makeRecurringPayment()<br/>with penalty
     LateOnce --> LateTwice: 2nd missed payment
@@ -186,7 +189,7 @@ stateDiagram-v2
     LateTwice --> Current: makeRecurringPayment()<br/>with penalty
     LateTwice --> LateThrice: 3rd missed payment
 
-    LateThrice --> AutoRevoked: makeRecurringPayment()<br/>triggers auto-revoke
+    LateThrice --> AutoRevoked: >= maxMissedPayments<br/>auto-revoke triggered
 
     AutoRevoked --> [*]
 
@@ -195,18 +198,27 @@ stateDiagram-v2
         No penalty applied
     end note
 
+    note right of GracePeriod
+        Payment overdue but < 3 days
+        No penalty yet (grace period)
+        Payment can be made without penalty
+    end note
+
     note right of LateOnce
-        1 missed payment
-        Penalty calculated pro-rata
+        1+ missed payment(s)
+        Beyond grace period
+        Penalty = penaltyRateBPS * baseAmount * time
     end note
 
     note right of LateTwice
-        2 missed payments
-        Higher penalty
+        2+ missed payments
+        Higher penalty accumulation
+        Configurable per license
     end note
 
     note right of LateThrice
-        3+ missed payments
+        >= maxMissedPayments
+        Default: 3 (configurable 1-255)
         Next payment attempt
         triggers auto-revocation
     end note
@@ -216,6 +228,28 @@ stateDiagram-v2
         Cannot make further payments
     end note
 ```
+
+### Configurable Payment Parameters
+
+Each license has configurable payment parameters:
+
+**maxMissedPayments** (defaults to 3):
+- Range: 1-255
+- Determines when auto-revocation occurs
+- Can be set per license at mint time
+- 0 = uses DEFAULT_MAX_MISSED_PAYMENTS (3)
+
+**penaltyRateBPS** (defaults to 500 = 5%):
+- Range: 0-5000 basis points (0-50%)
+- Applied per month, calculated pro-rata
+- Can be set per license at mint time
+- 0 = uses DEFAULT_PENALTY_RATE (500)
+
+**PENALTY_GRACE_PERIOD** (fixed at 3 days):
+- Global constant across all licenses
+- No penalties accrue during grace period
+- After due date + 3 days, penalties start
+- Gives licensees time to make payment without penalty
 
 ## Access Control States
 

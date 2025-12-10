@@ -1,5 +1,5 @@
 # IPAsset
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/deaf418b415477f4b81161589e5d319de1e2522a/src/IPAsset.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/IPAsset.sol)
 
 **Inherits:**
 Initializable, ERC721Upgradeable, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable, [IIPAsset](/src/interfaces/IIPAsset.sol/interface.IIPAsset.md)
@@ -69,6 +69,13 @@ mapping(uint256 => bool) private _hasActiveDispute;
 ```
 
 
+### _privateMetadata
+
+```solidity
+mapping(uint256 => string) private _privateMetadata;
+```
+
+
 ## Functions
 ### constructor
 
@@ -133,6 +140,13 @@ function configureRevenueSplit(uint256 tokenId, address[] memory recipients, uin
     whenNotPaused;
 ```
 
+### setRoyaltyRate
+
+
+```solidity
+function setRoyaltyRate(uint256 tokenId, uint256 basisPoints) external whenNotPaused;
+```
+
 ### burn
 
 
@@ -180,6 +194,20 @@ function updateActiveLicenseCount(uint256 tokenId, int256 delta) external onlyRo
 
 ```solidity
 function hasActiveDispute(uint256 tokenId) external view returns (bool);
+```
+
+### setPrivateMetadata
+
+
+```solidity
+function setPrivateMetadata(uint256 tokenId, string memory metadata) external whenNotPaused;
+```
+
+### getPrivateMetadata
+
+
+```solidity
+function getPrivateMetadata(uint256 tokenId) external view returns (string memory);
 ```
 
 ### pause

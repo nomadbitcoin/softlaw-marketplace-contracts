@@ -1,5 +1,5 @@
 # IIPAsset
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/deaf418b415477f4b81161589e5d319de1e2522a/src/interfaces/IIPAsset.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/interfaces/IIPAsset.sol)
 
 Interface for IP Asset NFT contract representing intellectual property ownership
 
@@ -131,6 +131,24 @@ function configureRevenueSplit(uint256 tokenId, address[] memory recipients, uin
 |`tokenId`|`uint256`|The IP asset token ID|
 |`recipients`|`address[]`|Array of addresses to receive revenue shares|
 |`shares`|`uint256[]`|Array of share amounts in basis points (must sum to 10000)|
+
+
+### setRoyaltyRate
+
+Sets the royalty rate for an IP asset
+
+*Only the token owner can set. Delegates to RevenueDistributor.*
+
+
+```solidity
+function setRoyaltyRate(uint256 tokenId, uint256 basisPoints) external;
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`tokenId`|`uint256`|The IP asset token ID|
+|`basisPoints`|`uint256`|Royalty rate in basis points (e.g., 1000 = 10%)|
 
 
 ### burn
@@ -280,6 +298,47 @@ Unpauses all state-changing operations
 function unpause() external;
 ```
 
+### setPrivateMetadata
+
+Sets private metadata for an IP asset
+
+*Only the IP asset owner can set private metadata*
+
+
+```solidity
+function setPrivateMetadata(uint256 tokenId, string memory metadata) external;
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`tokenId`|`uint256`|The ID of the IP asset|
+|`metadata`|`string`|The private metadata URI (IPFS, HTTP, etc.)|
+
+
+### getPrivateMetadata
+
+Gets private metadata for an IP asset
+
+*Only the IP asset owner can read private metadata*
+
+
+```solidity
+function getPrivateMetadata(uint256 tokenId) external view returns (string memory);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`tokenId`|`uint256`|The ID of the IP asset|
+
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`<none>`|`string`|metadata The private metadata URI|
+
+
 ## Events
 ### IPMinted
 Emitted when a new IP asset is minted
@@ -371,6 +430,21 @@ event RevenueSplitConfigured(uint256 indexed tokenId, address[] recipients, uint
 |`recipients`|`address[]`|Array of recipient addresses|
 |`shares`|`uint256[]`|Array of share percentages (must sum to 10000 basis points)|
 
+### RoyaltyRateSet
+Emitted when royalty rate is set for an IP asset
+
+
+```solidity
+event RoyaltyRateSet(uint256 indexed tokenId, uint256 basisPoints);
+```
+
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`tokenId`|`uint256`|The IP asset token ID|
+|`basisPoints`|`uint256`|Royalty rate in basis points (e.g., 1000 = 10%)|
+
 ### DisputeStatusChanged
 Emitted when an IP asset's dispute status changes
 
@@ -427,6 +501,22 @@ event RevenueDistributorSet(address indexed newContract);
 |Name|Type|Description|
 |----|----|-----------|
 |`newContract`|`address`|The new RevenueDistributor contract address|
+
+### PrivateMetadataUpdated
+Emitted when private metadata is updated for an IP asset
+
+*The metadata content is not included in the event for privacy*
+
+
+```solidity
+event PrivateMetadataUpdated(uint256 indexed tokenId);
+```
+
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`tokenId`|`uint256`|The ID of the IP asset|
 
 ## Errors
 ### InvalidAddress

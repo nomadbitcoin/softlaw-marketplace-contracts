@@ -44,12 +44,13 @@ sequenceDiagram
 
     Buyer->>MP: buyListing(listingId) + ETH
     MP->>LT: safeTransferFrom(seller, buyer, licenseId)
-    MP->>RD: distributePayment(ipAssetId, amount)
-    RD->>RD: Calculate fees & splits
+    MP->>RD: distributePayment(ipAssetId, amount, seller)
+    RD->>RD: Auto-detect primary/secondary sale
+    RD->>RD: Calculate fees & splits accordingly
     RD->>RD: Update balances
     MP-->>Buyer: License transferred
 
-    Note over Seller,RD: Seller and IP owner can withdraw later
+    Note over Seller,RD: Primary sale: platform fee + split to recipients<br/>Secondary sale: royalty to IP owners, rest to seller<br/>All parties can withdraw later
 ```
 
 ## Making an Offer
@@ -71,10 +72,13 @@ sequenceDiagram
     Seller->>LT: approve(Marketplace, tokenId)
     Seller->>MP: acceptOffer(offerId)
     MP->>LT: safeTransferFrom(seller, buyer, tokenId)
-    MP->>RD: distributePayment(ipAssetId, amount)
-    RD->>RD: Calculate fees & splits
+    MP->>RD: distributePayment(ipAssetId, amount, seller)
+    RD->>RD: Auto-detect primary/secondary sale
+    RD->>RD: Calculate fees & splits accordingly
     RD->>RD: Update balances
     MP-->>Seller: Offer accepted
+
+    Note over Seller,RD: Primary sale: platform fee + split to recipients<br/>Secondary sale: royalty to IP owners, rest to seller
 
     alt Buyer cancels before acceptance
         Buyer->>MP: cancelOffer(offerId)
@@ -91,19 +95,22 @@ sequenceDiagram
     participant LT as LicenseToken
     participant RD as RevenueDistributor
 
-    Note over Licensee,MP: License has paymentInterval > 0
+    Note over Licensee,MP: License has paymentInterval > 0<br/>maxMissedPayments configured (default: 3)<br/>penaltyRateBPS configured (default: 500 = 5%)
 
     loop Every payment interval
         Licensee->>MP: getTotalPaymentDue(licenseContract, licenseId)
-        MP-->>Licensee: baseAmount, penalty, total
+        MP-->>Licensee: baseAmount, penalty (if > 3 days overdue), total
+
+        Note over Licensee,MP: Grace period: 3 days after due date<br/>No penalty if paid within grace period
 
         Licensee->>MP: makeRecurringPayment(licenseContract, licenseId) + ETH
         MP->>MP: Calculate missed payments
 
-        alt < 3 missed payments
-            MP->>RD: distributePayment(ipAssetId, amount)
+        alt < maxMissedPayments
+            MP->>RD: distributePayment(ipAssetId, amount, seller)
+            RD->>RD: Distribute payment (typically primary sale)
             MP-->>Licensee: Payment successful
-        else >= 3 missed payments
+        else >= maxMissedPayments
             MP->>LT: revokeForMissedPayments(licenseId, missedCount)
             LT->>LT: Mark license as revoked
             MP-->>Licensee: License auto-revoked

@@ -81,6 +81,8 @@ graph TB
 - Manages license lifecycle (expiry, revocation)
 - Controls private metadata access
 - Supports one-time and recurring payment licenses
+- **Per-license penalty rates** (configurable 0-50%, defaults to 5%)
+- **Per-license maxMissedPayments** (configurable 1-255, defaults to 3)
 - Updates IPAsset license count
 
 **Flow**: Created by IPAsset, then listed on Marketplace for trading.
@@ -92,6 +94,7 @@ graph TB
 - Lists licenses for sale with fixed prices
 - Handles offers with escrow
 - Manages recurring payments with penalties
+- **3-day grace period** before penalties start accruing
 - Distributes sale proceeds via RevenueDistributor
 
 **Flow**: When a license is sold, payment is automatically distributed.
@@ -102,7 +105,9 @@ graph TB
 **Key Functions:**
 - Implements EIP-2981 royalty standard
 - Configures revenue splits per IP asset
-- Handles platform fees (deducted first)
+- **Auto-detects primary vs secondary sales** based on seller presence in split recipients
+- **Per-asset royalty rates** (custom or default)
+- Handles platform fees (deducted first for primary, royalties for secondary)
 - Manages withdrawals for all recipients
 
 **Flow**: Receives payments from Marketplace sales, distributes to IP owners and collaborators.
@@ -152,7 +157,7 @@ All contracts use OpenZeppelin's `AccessControl` for role-based permissions:
 - Upgrade contracts (UUPS)
 - Grant/revoke all roles
 - Update contract addresses
-- Set penalty rates
+- Set default penalty rates and royalty rates
 
 **Cross-Contract Roles:**
 - **IP_ASSET_ROLE**: Granted to IPAsset → allows minting licenses in LicenseToken

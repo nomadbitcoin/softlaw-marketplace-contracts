@@ -1,5 +1,5 @@
 # IRevenueDistributor
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/deaf418b415477f4b81161589e5d319de1e2522a/src/interfaces/IRevenueDistributor.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/interfaces/IRevenueDistributor.sol)
 
 Interface for simple revenue distribution to configured recipients
 
@@ -34,9 +34,11 @@ Distributes a payment according to configured splits
 
 *Deducts platform fee then splits remainder among recipients*
 
+*Auto-detects primary vs secondary sale based on seller presence in split recipients*
+
 
 ```solidity
-function distributePayment(uint256 ipAssetId, uint256 amount) external payable;
+function distributePayment(uint256 ipAssetId, uint256 amount, address seller) external payable;
 ```
 **Parameters**
 
@@ -44,6 +46,7 @@ function distributePayment(uint256 ipAssetId, uint256 amount) external payable;
 |----|----|-----------|
 |`ipAssetId`|`uint256`|The IP asset ID|
 |`amount`|`uint256`|Payment amount to distribute|
+|`seller`|`address`|Address of the seller (used for auto-detection)|
 
 
 ### withdraw
@@ -93,6 +96,45 @@ function setDefaultRoyalty(uint256 basisPoints) external;
 |Name|Type|Description|
 |----|----|-----------|
 |`basisPoints`|`uint256`|Royalty rate in basis points|
+
+
+### setAssetRoyalty
+
+Configure royalty rate for a specific IP asset
+
+*Only callable by CONFIGURATOR_ROLE*
+
+
+```solidity
+function setAssetRoyalty(uint256 ipAssetId, uint256 basisPoints) external;
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`ipAssetId`|`uint256`|The IP asset ID|
+|`basisPoints`|`uint256`|Royalty rate in basis points (e.g., 1000 = 10%)|
+
+
+### getAssetRoyalty
+
+Get royalty rate for an IP asset (custom or default)
+
+
+```solidity
+function getAssetRoyalty(uint256 ipAssetId) external view returns (uint256);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`ipAssetId`|`uint256`|The IP asset ID|
+
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`<none>`|`uint256`|Royalty rate in basis points|
 
 
 ### grantConfiguratorRole
@@ -161,7 +203,7 @@ Emitted when a payment is distributed
 
 
 ```solidity
-event PaymentDistributed(uint256 indexed ipAssetId, uint256 amount, uint256 platformFee);
+event PaymentDistributed(uint256 indexed ipAssetId, uint256 amount, address indexed seller, bool isPrimarySale);
 ```
 
 **Parameters**
@@ -170,7 +212,8 @@ event PaymentDistributed(uint256 indexed ipAssetId, uint256 amount, uint256 plat
 |----|----|-----------|
 |`ipAssetId`|`uint256`|The IP asset the payment is for|
 |`amount`|`uint256`|Total payment amount|
-|`platformFee`|`uint256`|Fee taken by platform|
+|`seller`|`address`|Address of the seller|
+|`isPrimarySale`|`bool`|Whether this is a primary sale (seller is in split recipients)|
 
 ### SplitConfigured
 Emitted when a revenue split is configured
@@ -216,6 +259,21 @@ event RoyaltyUpdated(uint256 newRoyaltyBasisPoints);
 |Name|Type|Description|
 |----|----|-----------|
 |`newRoyaltyBasisPoints`|`uint256`|New royalty rate in basis points|
+
+### AssetRoyaltyUpdated
+Emitted when a per-asset royalty rate is updated
+
+
+```solidity
+event AssetRoyaltyUpdated(uint256 indexed ipAssetId, uint256 basisPoints);
+```
+
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`ipAssetId`|`uint256`|The IP asset ID|
+|`basisPoints`|`uint256`|New royalty rate in basis points|
 
 ## Errors
 ### ArrayLengthMismatch
@@ -320,6 +378,14 @@ Thrown when basis points exceeds 10000 (100%)
 
 ```solidity
 error InvalidBasisPoints();
+```
+
+### InvalidRoyaltyRate
+Thrown when royalty rate exceeds 100%
+
+
+```solidity
+error InvalidRoyaltyRate();
 ```
 
 ## Structs
