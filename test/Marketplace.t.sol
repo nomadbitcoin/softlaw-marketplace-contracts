@@ -106,7 +106,8 @@ contract MarketplaceTest is Test {
         
         ipAsset.grantRole(ipAsset.LICENSE_MANAGER_ROLE(), address(licenseToken));
         licenseToken.grantRole(licenseToken.IP_ASSET_ROLE(), address(ipAsset));
-        
+        revenueDistributor.grantConfiguratorRole(admin);
+
         vm.stopPrank();
 
         vm.prank(seller);
@@ -1868,6 +1869,878 @@ contract MarketplaceTest is Test {
         // Check linear scaling
         assertApproxEqAbs(penalty2, penalty1 * 2, penalty1 / 100, "Penalties should scale linearly");
         assertApproxEqAbs(penalty3, penalty1 * 3, penalty1 / 100, "Penalties should scale linearly");
+    }
+
+    // ==========================
+    // Story 7.2: Secondary Sales Support Tests
+    // ==========================
+
+    function testBuyListingIPAssetPrimarySale() public {
+        // Setup: seller mints and configures IP Asset with 10% royalty
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000; // 100%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Seller lists their IP Asset (primary sale)
+        vm.prank(seller);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        bytes32 listingId = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+
+        // Buyer purchases
+        vm.deal(buyer, 100 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 100 ether}(listingId);
+
+        // Verify buyer owns the IP Asset
+        assertEq(ipAsset.ownerOf(newIpTokenId), buyer);
+
+        // Calculate expected amounts (primary sale: full amount minus platform fee)
+        uint256 platformFee = (100 ether * 250) / 10000; // 2.5%
+        uint256 remaining = 100 ether - platformFee;
+
+        // Verify seller received full payment (no royalty in primary sale)
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, remaining, "Seller should receive full payment");
+    }
+
+    function testBuyListingIPAssetSecondarySale() public {
+        // Setup: seller mints and configures IP Asset with 10% royalty
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000; // 100%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Primary sale: seller sells to buyer
+        vm.prank(seller);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        bytes32 listing1 = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        vm.deal(buyer, 100 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 100 ether}(listing1);
+
+        // Buyer now owns the IP Asset
+        assertEq(ipAsset.ownerOf(newIpTokenId), buyer);
+
+        // Secondary sale: buyer lists for resale
+        vm.prank(buyer);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(buyer);
+        bytes32 listing2 = marketplace.createListing(address(ipAsset), newIpTokenId, 150 ether, true);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+        uint256 buyerBalanceBefore = revenueDistributor.getBalance(buyer);
+
+        // other buys from buyer (secondary sale)
+        vm.deal(other, 150 ether);
+        vm.prank(other);
+        marketplace.buyListing{value: 150 ether}(listing2);
+
+        // Verify other owns it
+        assertEq(ipAsset.ownerOf(newIpTokenId), other);
+
+        // Calculate expected amounts
+        uint256 platformFee = (150 ether * 250) / 10000; // 2.5%
+        uint256 remaining = 150 ether - platformFee;
+        uint256 royalty = (remaining * 1000) / 10000; // 10%
+        uint256 sellerProceeds = remaining - royalty;
+
+        // Verify seller (original creator) received royalty
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, royalty, "Creator should receive royalty");
+
+        // Verify buyer (reseller) received remainder
+        uint256 buyerBalanceAfter = revenueDistributor.getBalance(buyer);
+        assertEq(buyerBalanceAfter - buyerBalanceBefore, sellerProceeds, "Reseller should receive remainder");
+    }
+
+    function testBuyListingLicensePrimarySale() public {
+        // Setup: seller owns IP Asset and mints a license
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000; // 100%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Seller mints a license
+        vm.prank(seller);
+        uint256 newLicenseId = ipAsset.mintLicense(
+            newIpTokenId,
+            seller,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "license terms",
+            false,
+            0
+        );
+
+        // Seller lists their license (primary sale)
+        vm.prank(seller);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(seller);
+        bytes32 listingId = marketplace.createListing(address(licenseToken), newLicenseId, 10 ether, false);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+
+        // Buyer purchases license
+        vm.deal(buyer, 10 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 10 ether}(listingId);
+
+        // Verify buyer owns the license
+        assertEq(licenseToken.balanceOf(buyer, newLicenseId), 1);
+
+        // Calculate expected amounts (primary sale: full amount minus platform fee)
+        uint256 platformFee = (10 ether * 250) / 10000; // 2.5%
+        uint256 remaining = 10 ether - platformFee;
+
+        // Verify seller received full payment (no royalty in primary sale)
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, remaining, "IP owner should receive full payment");
+    }
+
+    function testBuyListingLicenseSecondarySale() public {
+        // Setup: seller owns IP Asset and mints a license
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000; // 100%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Seller mints a license
+        vm.prank(seller);
+        uint256 newLicenseId = ipAsset.mintLicense(
+            newIpTokenId,
+            seller,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "license terms",
+            false,
+            0
+        );
+
+        // Primary sale: seller sells license to buyer
+        vm.prank(seller);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(seller);
+        bytes32 listing1 = marketplace.createListing(address(licenseToken), newLicenseId, 10 ether, false);
+
+        vm.deal(buyer, 10 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 10 ether}(listing1);
+
+        // Buyer now owns the license
+        assertEq(licenseToken.balanceOf(buyer, newLicenseId), 1);
+
+        // Secondary sale: buyer lists for resale
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        bytes32 listing2 = marketplace.createListing(address(licenseToken), newLicenseId, 15 ether, false);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+        uint256 buyerBalanceBefore = revenueDistributor.getBalance(buyer);
+
+        // other buys from buyer (secondary sale)
+        vm.deal(other, 15 ether);
+        vm.prank(other);
+        marketplace.buyListing{value: 15 ether}(listing2);
+
+        // Verify other owns it
+        assertEq(licenseToken.balanceOf(other, newLicenseId), 1);
+
+        // Calculate expected amounts
+        uint256 platformFee = (15 ether * 250) / 10000; // 2.5%
+        uint256 remaining = 15 ether - platformFee;
+        uint256 royalty = (remaining * 1000) / 10000; // 10%
+        uint256 sellerProceeds = remaining - royalty;
+
+        // Verify seller (IP owner) received royalty
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, royalty, "IP owner should receive royalty");
+
+        // Verify buyer (license reseller) received remainder
+        uint256 buyerBalanceAfter = revenueDistributor.getBalance(buyer);
+        assertEq(buyerBalanceAfter - buyerBalanceBefore, sellerProceeds, "License reseller should receive remainder");
+    }
+
+    function testAcceptOfferIPAssetSecondarySale() public {
+        // Setup: seller mints and configures IP Asset with 10% royalty
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000; // 100%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Primary sale: seller sells to buyer
+        vm.prank(seller);
+        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+
+        // Secondary sale via offer: other makes offer, buyer accepts
+        vm.deal(other, 150 ether);
+        vm.prank(other);
+        bytes32 offerId = marketplace.createOffer{value: 150 ether}(
+            address(ipAsset),
+            newIpTokenId,
+            block.timestamp + 1 days
+        );
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+        uint256 buyerBalanceBefore = revenueDistributor.getBalance(buyer);
+
+        // Buyer accepts offer (secondary sale)
+        vm.prank(buyer);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(buyer);
+        marketplace.acceptOffer(offerId);
+
+        // Verify other owns it
+        assertEq(ipAsset.ownerOf(newIpTokenId), other);
+
+        // Calculate expected amounts
+        uint256 platformFee = (150 ether * 250) / 10000; // 2.5%
+        uint256 remaining = 150 ether - platformFee;
+        uint256 royalty = (remaining * 1000) / 10000; // 10%
+        uint256 sellerProceeds = remaining - royalty;
+
+        // Verify seller (original creator) received royalty
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, royalty, "Creator should receive royalty");
+
+        // Verify buyer (reseller) received remainder
+        uint256 buyerBalanceAfter = revenueDistributor.getBalance(buyer);
+        assertEq(buyerBalanceAfter - buyerBalanceBefore, sellerProceeds, "Reseller should receive remainder");
+    }
+
+    function testAcceptOfferLicenseSecondarySale() public {
+        // Setup: seller owns IP Asset and mints a license
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000; // 100%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Seller mints a license
+        vm.prank(seller);
+        uint256 newLicenseId = ipAsset.mintLicense(
+            newIpTokenId,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "license terms",
+            false,
+            0
+        );
+
+        // Secondary sale via offer: other makes offer, buyer accepts
+        vm.deal(other, 15 ether);
+        vm.prank(other);
+        bytes32 offerId = marketplace.createOffer{value: 15 ether}(
+            address(licenseToken),
+            newLicenseId,
+            block.timestamp + 1 days
+        );
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+        uint256 buyerBalanceBefore = revenueDistributor.getBalance(buyer);
+
+        // Buyer accepts offer (secondary sale)
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        marketplace.acceptOffer(offerId);
+
+        // Verify other owns it
+        assertEq(licenseToken.balanceOf(other, newLicenseId), 1);
+
+        // Calculate expected amounts
+        uint256 platformFee = (15 ether * 250) / 10000; // 2.5%
+        uint256 remaining = 15 ether - platformFee;
+        uint256 royalty = (remaining * 1000) / 10000; // 10%
+        uint256 sellerProceeds = remaining - royalty;
+
+        // Verify seller (IP owner) received royalty
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, royalty, "IP owner should receive royalty");
+
+        // Verify buyer (license reseller) received remainder
+        uint256 buyerBalanceAfter = revenueDistributor.getBalance(buyer);
+        assertEq(buyerBalanceAfter - buyerBalanceBefore, sellerProceeds, "License reseller should receive remainder");
+    }
+
+    function testMultipleRecipientsReceiveRoyalty() public {
+        // Setup: IP Asset with 3 creators (40%, 35%, 25% split)
+        address creator1 = address(100);
+        address creator2 = address(101);
+        address creator3 = address(102);
+
+        vm.prank(creator1);
+        uint256 newIpTokenId = ipAsset.mintIP(creator1, "ipfs://metadata");
+
+        address[] memory recipients = new address[](3);
+        recipients[0] = creator1;
+        recipients[1] = creator2;
+        recipients[2] = creator3;
+        uint256[] memory shares = new uint256[](3);
+        shares[0] = 4000; // 40%
+        shares[1] = 3500; // 35%
+        shares[2] = 2500; // 25%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Primary sale: creator1 sells to buyer
+        vm.prank(creator1);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(creator1);
+        bytes32 listing1 = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        vm.deal(buyer, 100 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 100 ether}(listing1);
+
+        // Secondary sale: buyer lists for resale
+        vm.prank(buyer);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(buyer);
+        bytes32 listing2 = marketplace.createListing(address(ipAsset), newIpTokenId, 200 ether, true);
+
+        uint256 creator1BalanceBefore = revenueDistributor.getBalance(creator1);
+        uint256 creator2BalanceBefore = revenueDistributor.getBalance(creator2);
+        uint256 creator3BalanceBefore = revenueDistributor.getBalance(creator3);
+
+        // other buys from buyer (secondary sale)
+        vm.deal(other, 200 ether);
+        vm.prank(other);
+        marketplace.buyListing{value: 200 ether}(listing2);
+
+        // Calculate expected amounts
+        uint256 platformFee = (200 ether * 250) / 10000; // 2.5%
+        uint256 remaining = 200 ether - platformFee;
+        uint256 totalRoyalty = (remaining * 1000) / 10000; // 10%
+
+        uint256 creator1Royalty = (totalRoyalty * 4000) / 10000; // 40%
+        uint256 creator2Royalty = (totalRoyalty * 3500) / 10000; // 35%
+        uint256 creator3Royalty = (totalRoyalty * 2500) / 10000; // 25%
+
+        // Verify each creator received correct royalty share
+        uint256 creator1BalanceAfter = revenueDistributor.getBalance(creator1);
+        uint256 creator2BalanceAfter = revenueDistributor.getBalance(creator2);
+        uint256 creator3BalanceAfter = revenueDistributor.getBalance(creator3);
+
+        assertEq(creator1BalanceAfter - creator1BalanceBefore, creator1Royalty, "Creator1 should receive 40% of royalty");
+        assertEq(creator2BalanceAfter - creator2BalanceBefore, creator2Royalty, "Creator2 should receive 35% of royalty");
+        assertEq(creator3BalanceAfter - creator3BalanceBefore, creator3Royalty, "Creator3 should receive 25% of royalty");
+    }
+
+    function testSecondarySaleRoyaltyAmount() public {
+        // Setup: seller mints IP Asset with 10% royalty
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000; // 100%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Primary sale
+        vm.prank(seller);
+        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+
+        // Secondary sale for exactly 100 ETH
+        vm.prank(buyer);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+
+        vm.deal(other, 100 ether);
+        vm.prank(other);
+        marketplace.buyListing{value: 100 ether}(listingId);
+
+        // Calculate expected royalty
+        uint256 platformFee = (100 ether * 250) / 10000; // 2.5 ETH
+        uint256 remaining = 100 ether - platformFee; // 97.5 ETH
+        uint256 expectedRoyalty = (remaining * 1000) / 10000; // 9.75 ETH
+
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedRoyalty, "Royalty should be exactly 9.75 ETH");
+    }
+
+    function testPrimarySaleNoRoyalty() public {
+        // Setup: seller mints IP Asset with 20% royalty
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000; // 100%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 2000); // 20%
+
+        // Primary sale: seller lists their own IP Asset
+        vm.prank(seller);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        bytes32 listingId = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+
+        vm.deal(buyer, 100 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 100 ether}(listingId);
+
+        // Calculate expected amounts (NO royalty in primary sale)
+        uint256 platformFee = (100 ether * 250) / 10000; // 2.5%
+        uint256 expectedAmount = 100 ether - platformFee; // Full amount minus platform fee
+
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedAmount, "Primary sale should not deduct royalty");
+    }
+
+    function testSecondarySaleCustomRoyaltyRate() public {
+        // Setup: IP Asset with custom 15% royalty (different from default 10%)
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000; // 100%
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1500); // 15% custom rate
+
+        // Primary sale
+        vm.prank(seller);
+        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+
+        // Secondary sale
+        vm.prank(buyer);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+
+        vm.deal(other, 100 ether);
+        vm.prank(other);
+        marketplace.buyListing{value: 100 ether}(listingId);
+
+        // Calculate expected royalty with 15% rate
+        uint256 platformFee = (100 ether * 250) / 10000; // 2.5%
+        uint256 remaining = 100 ether - platformFee;
+        uint256 expectedRoyalty = (remaining * 1500) / 10000; // 15%
+
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedRoyalty, "Should use custom 15% royalty rate");
+    }
+
+    function testLicenseExtractsCorrectIPAssetId() public {
+        // Setup: seller owns IP Asset #123
+        vm.prank(seller);
+        uint256 ipAssetId123 = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        // Configure split and royalty for IP #123
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(ipAssetId123, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(ipAssetId123, 1000); // 10%
+
+        // Seller mints license #456 for IP Asset #123
+        vm.prank(seller);
+        uint256 license456 = ipAsset.mintLicense(
+            ipAssetId123,
+            buyer,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "terms",
+            false,
+            0
+        );
+
+        // Verify license correctly maps to IP Asset #123
+        (uint256 extractedIpAssetId,,,,,,,) = licenseToken.getLicenseInfo(license456);
+        assertEq(extractedIpAssetId, ipAssetId123, "License should map to correct IP Asset");
+
+        // Secondary sale of license
+        vm.prank(buyer);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(address(licenseToken), license456, 10 ether, false);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+
+        vm.deal(other, 10 ether);
+        vm.prank(other);
+        marketplace.buyListing{value: 10 ether}(listingId);
+
+        // Verify royalty went to IP Asset #123's owner (seller), not license ID #456
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        uint256 platformFee = (10 ether * 250) / 10000;
+        uint256 remaining = 10 ether - platformFee;
+        uint256 expectedRoyalty = (remaining * 1000) / 10000;
+
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedRoyalty, "Royalty should go to IP Asset owner");
+    }
+
+    function testCreatorResellingOwnIPAssetAfterBuyback() public {
+        // Setup: seller creates IP Asset
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // First sale: seller → buyer (primary)
+        vm.prank(seller);
+        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+
+        // Buyback: buyer → seller (secondary, seller pays royalty to themselves)
+        vm.prank(buyer);
+        ipAsset.safeTransferFrom(buyer, seller, newIpTokenId);
+
+        // Seller lists again (primary sale again, since seller is in split)
+        vm.prank(seller);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        bytes32 listingId = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+
+        vm.deal(other, 100 ether);
+        vm.prank(other);
+        marketplace.buyListing{value: 100 ether}(listingId);
+
+        // This is a primary sale (seller in split), so no royalty deduction
+        uint256 platformFee = (100 ether * 250) / 10000;
+        uint256 expectedAmount = 100 ether - platformFee;
+
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedAmount, "Creator reselling own IP is primary sale");
+    }
+
+    function testMultipleSequentialSecondarySales() public {
+        // Setup: seller creates IP Asset
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Primary sale: seller → buyer
+        vm.prank(seller);
+        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+
+        // Secondary sale #1: buyer → other
+        vm.prank(buyer);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(buyer);
+        bytes32 listing1 = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        uint256 sellerBalanceBefore1 = revenueDistributor.getBalance(seller);
+
+        vm.deal(other, 100 ether);
+        vm.prank(other);
+        marketplace.buyListing{value: 100 ether}(listing1);
+
+        // Verify first royalty
+        uint256 sellerBalanceAfter1 = revenueDistributor.getBalance(seller);
+        uint256 platformFee1 = (100 ether * 250) / 10000;
+        uint256 remaining1 = 100 ether - platformFee1;
+        uint256 royalty1 = (remaining1 * 1000) / 10000;
+        assertEq(sellerBalanceAfter1 - sellerBalanceBefore1, royalty1, "First secondary sale royalty");
+
+        // Secondary sale #2: other → buyer (buyer buying it back)
+        address newBuyer = address(200);
+        vm.prank(other);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(other);
+        bytes32 listing2 = marketplace.createListing(address(ipAsset), newIpTokenId, 150 ether, true);
+
+        uint256 sellerBalanceBefore2 = revenueDistributor.getBalance(seller);
+
+        vm.deal(newBuyer, 150 ether);
+        vm.prank(newBuyer);
+        marketplace.buyListing{value: 150 ether}(listing2);
+
+        // Verify second royalty
+        uint256 sellerBalanceAfter2 = revenueDistributor.getBalance(seller);
+        uint256 platformFee2 = (150 ether * 250) / 10000;
+        uint256 remaining2 = 150 ether - platformFee2;
+        uint256 royalty2 = (remaining2 * 1000) / 10000;
+        assertEq(sellerBalanceAfter2 - sellerBalanceBefore2, royalty2, "Second secondary sale royalty");
+    }
+
+    function testLowRoyaltySecondarySale() public {
+        // Setup: IP Asset with 1% royalty (very low)
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 100); // 1% royalty
+
+        // Primary sale
+        vm.prank(seller);
+        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+
+        // Secondary sale
+        vm.prank(buyer);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(buyer);
+        bytes32 listingId = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+        uint256 buyerBalanceBefore = revenueDistributor.getBalance(buyer);
+
+        vm.deal(other, 100 ether);
+        vm.prank(other);
+        marketplace.buyListing{value: 100 ether}(listingId);
+
+        // With 1% royalty, calculate expected amounts
+        uint256 platformFee = (100 ether * 250) / 10000; // 2.5%
+        uint256 remaining = 100 ether - platformFee; // 97.5 ETH
+        uint256 royalty = (remaining * 100) / 10000; // 1% = 0.975 ETH
+        uint256 expectedSellerProceeds = remaining - royalty; // 96.525 ETH
+
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        uint256 buyerBalanceAfter = revenueDistributor.getBalance(buyer);
+
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, royalty, "Creator should receive 1% royalty");
+        assertEq(buyerBalanceAfter - buyerBalanceBefore, expectedSellerProceeds, "Reseller should receive remainder");
+    }
+
+    function testAcceptOfferIPAssetPrimarySale() public {
+        // Setup: seller mints IP Asset
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Buyer makes offer
+        vm.deal(buyer, 100 ether);
+        vm.prank(buyer);
+        bytes32 offerId = marketplace.createOffer{value: 100 ether}(
+            address(ipAsset),
+            newIpTokenId,
+            block.timestamp + 1 days
+        );
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+
+        // Seller accepts offer (primary sale)
+        vm.prank(seller);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        marketplace.acceptOffer(offerId);
+
+        // Verify buyer owns it
+        assertEq(ipAsset.ownerOf(newIpTokenId), buyer);
+
+        // Primary sale: full payment minus platform fee
+        uint256 platformFee = (100 ether * 250) / 10000;
+        uint256 expectedAmount = 100 ether - platformFee;
+
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedAmount, "Primary sale via offer: no royalty");
+    }
+
+    function testAcceptOfferLicensePrimarySale() public {
+        // Setup: seller owns IP Asset and mints license
+        vm.prank(seller);
+        uint256 newIpTokenId = ipAsset.mintIP(seller, "ipfs://metadata");
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = seller;
+        uint256[] memory shares = new uint256[](1);
+        shares[0] = 10000;
+
+        vm.prank(admin);
+        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+
+        vm.prank(admin);
+        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+
+        // Seller mints license to themselves
+        vm.prank(seller);
+        uint256 newLicenseId = ipAsset.mintLicense(
+            newIpTokenId,
+            seller,
+            1,
+            "ipfs://public",
+            "ipfs://private",
+            block.timestamp + 365 days,
+            "terms",
+            false,
+            0
+        );
+
+        // Buyer makes offer
+        vm.deal(buyer, 10 ether);
+        vm.prank(buyer);
+        bytes32 offerId = marketplace.createOffer{value: 10 ether}(
+            address(licenseToken),
+            newLicenseId,
+            block.timestamp + 1 days
+        );
+
+        uint256 sellerBalanceBefore = revenueDistributor.getBalance(seller);
+
+        // Seller accepts offer (primary sale)
+        vm.prank(seller);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(seller);
+        marketplace.acceptOffer(offerId);
+
+        // Verify buyer owns license
+        assertEq(licenseToken.balanceOf(buyer, newLicenseId), 1);
+
+        // Primary sale: full payment minus platform fee
+        uint256 platformFee = (10 ether * 250) / 10000;
+        uint256 expectedAmount = 10 ether - platformFee;
+
+        uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedAmount, "Primary license sale via offer: no royalty");
     }
 }
 

@@ -200,7 +200,38 @@ contract IPAssetTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IIPAsset.NotTokenOwner.selector));
         ipAsset.configureRevenueSplit(tokenId, recipients, shares);
     }
-    
+
+    function testOwnerCanSetRoyaltyRate() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(creator);
+        ipAsset.setRoyaltyRate(tokenId, 1500); // 15%
+
+        // Verify it was set in RevenueDistributor
+        uint256 royalty = revenueDistributor.getAssetRoyalty(tokenId);
+        assertEq(royalty, 1500);
+    }
+
+    function testNonOwnerCannotSetRoyaltyRate() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(other);
+        vm.expectRevert(abi.encodeWithSelector(IIPAsset.NotTokenOwner.selector));
+        ipAsset.setRoyaltyRate(tokenId, 1500);
+    }
+
+    function testSetRoyaltyRateEmitsEvent() public {
+        vm.prank(creator);
+        uint256 tokenId = ipAsset.mintIP(creator, "ipfs://metadata");
+
+        vm.prank(creator);
+        vm.expectEmit(true, false, false, true);
+        emit IIPAsset.RoyaltyRateSet(tokenId, 1500);
+        ipAsset.setRoyaltyRate(tokenId, 1500);
+    }
+
     // ============ BR-001.6: IP assets MAY be transferred to any valid address ============
     
     function testTransferToValidAddress() public {

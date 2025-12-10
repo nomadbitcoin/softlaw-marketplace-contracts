@@ -107,7 +107,7 @@ contract Marketplace is
         }
 
         _transferNFT(listing.nftContract, listing.seller, msg.sender, listing.tokenId, listing.isERC721);
-        _distributePayment(ipAssetId, listing.price);
+        _distributePayment(ipAssetId, listing.price, listing.seller);
 
         emit Sale(listingId, msg.sender, listing.seller, listing.price);
 
@@ -163,7 +163,7 @@ contract Marketplace is
             (ipAssetId,,,,,,,) = ILicenseToken(offer.nftContract).getLicenseInfo(offer.tokenId);
         }
 
-        _distributePayment(ipAssetId, offer.price);
+        _distributePayment(ipAssetId, offer.price, msg.sender);
 
         emit OfferAccepted(offerId, msg.sender);
     }
@@ -182,8 +182,8 @@ contract Marketplace is
         }
     }
 
-    function _distributePayment(uint256 ipAssetId, uint256 totalAmount) internal {
-        IRevenueDistributor(revenueDistributor).distributePayment{value: totalAmount}(ipAssetId, totalAmount);
+    function _distributePayment(uint256 ipAssetId, uint256 totalAmount, address seller) internal {
+        IRevenueDistributor(revenueDistributor).distributePayment{value: totalAmount}(ipAssetId, totalAmount, seller);
     }
 
     function cancelOffer(bytes32 offerId) external {
@@ -276,7 +276,15 @@ contract Marketplace is
         _updatePaymentState(licenseId);
 
         (uint256 ipAssetId,,,,,,,) = ILicenseToken(licenseContract).getLicenseInfo(licenseId);
-        _distributePayment(ipAssetId, totalAmount);
+
+        // Recurring payments are subscription fees (not sales), and should distribute
+        // 100% of funds to IP owners without royalty deductions. To achieve this via
+        // auto-detection, we pass any split recipient as "seller" to trigger primary
+        // sale logic. Any recipient works - we just need an address IN the split array.
+        (address[] memory recipients,) = IRevenueDistributor(revenueDistributor).ipSplits(ipAssetId);
+        address seller = recipients.length > 0 ? recipients[0] : msg.sender;
+
+        _distributePayment(ipAssetId, totalAmount, seller);
 
         emit RecurringPaymentMade(licenseId, msg.sender, baseAmount, penalty, block.timestamp);
 

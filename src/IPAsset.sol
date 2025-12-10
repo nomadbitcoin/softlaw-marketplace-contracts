@@ -129,6 +129,14 @@ contract IPAsset is
         emit RevenueSplitConfigured(tokenId, recipients, shares);
     }
 
+    function setRoyaltyRate(uint256 tokenId, uint256 basisPoints) external whenNotPaused {
+        if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+
+        IRevenueDistributor(revenueDistributor).setAssetRoyalty(tokenId, basisPoints);
+
+        emit RoyaltyRateSet(tokenId, basisPoints);
+    }
+
     function burn(uint256 tokenId) external whenNotPaused {
         if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
         if (activeLicenseCount[tokenId] > 0) {

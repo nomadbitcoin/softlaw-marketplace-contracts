@@ -62,6 +62,13 @@ interface IIPAsset {
     event RevenueSplitConfigured(uint256 indexed tokenId, address[] recipients, uint256[] shares);
 
     /**
+     * @notice Emitted when royalty rate is set for an IP asset
+     * @param tokenId The IP asset token ID
+     * @param basisPoints Royalty rate in basis points (e.g., 1000 = 10%)
+     */
+    event RoyaltyRateSet(uint256 indexed tokenId, uint256 basisPoints);
+
+    /**
      * @notice Emitted when an IP asset's dispute status changes
      * @param tokenId The IP asset token ID
      * @param hasDispute Whether the asset now has an active dispute
@@ -207,6 +214,14 @@ interface IIPAsset {
         address[] memory recipients,
         uint256[] memory shares
     ) external;
+
+    /**
+     * @notice Sets the royalty rate for an IP asset
+     * @dev Only the token owner can set. Delegates to RevenueDistributor.
+     * @param tokenId The IP asset token ID
+     * @param basisPoints Royalty rate in basis points (e.g., 1000 = 10%)
+     */
+    function setRoyaltyRate(uint256 tokenId, uint256 basisPoints) external;
 
     /**
      * @notice Burns an IP asset NFT

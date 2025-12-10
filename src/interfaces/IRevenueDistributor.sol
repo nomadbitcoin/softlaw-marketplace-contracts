@@ -62,15 +62,19 @@ interface IRevenueDistributor {
     /// @notice Thrown when basis points exceeds 10000 (100%)
     error InvalidBasisPoints();
 
+    /// @notice Thrown when royalty rate exceeds 100%
+    error InvalidRoyaltyRate();
+
     // ==================== EVENTS ====================
 
     /**
      * @notice Emitted when a payment is distributed
      * @param ipAssetId The IP asset the payment is for
      * @param amount Total payment amount
-     * @param platformFee Fee taken by platform
+     * @param seller Address of the seller
+     * @param isPrimarySale Whether this is a primary sale (seller is in split recipients)
      */
-    event PaymentDistributed(uint256 indexed ipAssetId, uint256 amount, uint256 platformFee);
+    event PaymentDistributed(uint256 indexed ipAssetId, uint256 amount, address indexed seller, bool isPrimarySale);
 
     /**
      * @notice Emitted when a revenue split is configured
@@ -94,6 +98,13 @@ interface IRevenueDistributor {
      */
     event RoyaltyUpdated(uint256 newRoyaltyBasisPoints);
 
+    /**
+     * @notice Emitted when a per-asset royalty rate is updated
+     * @param ipAssetId The IP asset ID
+     * @param basisPoints New royalty rate in basis points
+     */
+    event AssetRoyaltyUpdated(uint256 indexed ipAssetId, uint256 basisPoints);
+
     // ==================== FUNCTIONS ====================
 
     /**
@@ -112,10 +123,12 @@ interface IRevenueDistributor {
     /**
      * @notice Distributes a payment according to configured splits
      * @dev Deducts platform fee then splits remainder among recipients
+     * @dev Auto-detects primary vs secondary sale based on seller presence in split recipients
      * @param ipAssetId The IP asset ID
      * @param amount Payment amount to distribute
+     * @param seller Address of the seller (used for auto-detection)
      */
-    function distributePayment(uint256 ipAssetId, uint256 amount) external payable;
+    function distributePayment(uint256 ipAssetId, uint256 amount, address seller) external payable;
 
     /**
      * @notice Withdraws accumulated funds
@@ -137,6 +150,21 @@ interface IRevenueDistributor {
      * @param basisPoints Royalty rate in basis points
      */
     function setDefaultRoyalty(uint256 basisPoints) external;
+
+    /**
+     * @notice Configure royalty rate for a specific IP asset
+     * @dev Only callable by CONFIGURATOR_ROLE
+     * @param ipAssetId The IP asset ID
+     * @param basisPoints Royalty rate in basis points (e.g., 1000 = 10%)
+     */
+    function setAssetRoyalty(uint256 ipAssetId, uint256 basisPoints) external;
+
+    /**
+     * @notice Get royalty rate for an IP asset (custom or default)
+     * @param ipAssetId The IP asset ID
+     * @return Royalty rate in basis points
+     */
+    function getAssetRoyalty(uint256 ipAssetId) external view returns (uint256);
 
     /**
      * @notice Grants CONFIGURATOR_ROLE to the IPAsset contract
