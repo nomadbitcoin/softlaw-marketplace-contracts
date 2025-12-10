@@ -136,8 +136,8 @@ contract IntegrationTest is Test {
         assertEq(licenseToken.balanceOf(licensee, licenseId), 5);
         
         // 4. Verify license details
-        // Struct: ipAssetId, supply, expiryTime, terms, isExclusive, isRevoked, publicMetadataURI, privateMetadataURI, paymentInterval, maxMissedPayments
-        (uint256 linkedIpAssetId,,,,,, string memory publicURI, string memory privateURI,,) =
+        // Struct: ipAssetId, supply, expiryTime, terms, isExclusive, isRevoked, publicMetadataURI, privateMetadataURI, paymentInterval, maxMissedPayments, penaltyRateBPS
+        (uint256 linkedIpAssetId,,,,,, string memory publicURI, string memory privateURI,,,) =
             licenseToken.licenses(licenseId);
         assertEq(linkedIpAssetId, ipTokenId);
         assertEq(publicURI, "ipfs://public-terms");

@@ -21,8 +21,9 @@ contract LicenseToken is
     bytes32 public constant IP_ASSET_ROLE = keccak256("IP_ASSET_ROLE");
     bytes32 public constant MARKETPLACE_ROLE = keccak256("MARKETPLACE_ROLE");
 
-    /// @notice Default maximum number of missed payments before auto-revocation (3 payments)
     uint8 public constant DEFAULT_MAX_MISSED_PAYMENTS = 3;
+    uint16 public constant DEFAULT_PENALTY_RATE = 500; //5%
+    uint16 public constant MAX_PENALTY_RATE = 5000; // 50%
 
     mapping(uint256 => License) public licenses;
     mapping(uint256 => bool) private _isExpired;
@@ -32,7 +33,6 @@ contract LicenseToken is
     address public ipAssetContract;
     address public arbitratorContract;
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
@@ -41,8 +41,7 @@ contract LicenseToken is
         string memory baseURI,
         address admin,
         address ipAsset,
-        address arbitrator,
-        address revenueDistributor
+        address arbitrator
     ) external initializer {
         __ERC1155_init(baseURI);
         __AccessControl_init();
@@ -67,25 +66,29 @@ contract LicenseToken is
         string memory terms,
         bool isExclusive,
         uint256 paymentInterval,
-        uint8 maxMissedPayments
+        uint8 maxMissedPayments,
+        uint16 penaltyRateBPS
     ) external onlyRole(IP_ASSET_ROLE) whenNotPaused returns (uint256) {
         try IIPAsset(ipAssetContract).hasActiveDispute(ipAssetId) returns (bool) {
-            // Validate IP asset exists by checking if it has an active dispute status
-            // This is a lightweight check that the IP asset contract recognizes this token
         } catch {
             revert InvalidIPAsset();
         }
 
-        // Validate exclusive/non-exclusive and enforce mutual exclusion
         if (isExclusive) {
             if (supply != 1) revert ExclusiveLicenseMustHaveSupplyOne();
             if (_hasExclusiveLicense[ipAssetId]) revert ExclusiveLicenseAlreadyExists();
             _hasExclusiveLicense[ipAssetId] = true;
         }
 
-        // Use default if 0 is passed
         if (maxMissedPayments == 0) {
             maxMissedPayments = DEFAULT_MAX_MISSED_PAYMENTS;
+        }
+
+        if (penaltyRateBPS > MAX_PENALTY_RATE) {
+            revert InvalidPenaltyRate();
+        }
+        if (penaltyRateBPS == 0) {
+            penaltyRateBPS = DEFAULT_PENALTY_RATE;
         }
 
         uint256 licenseId = _licenseIdCounter++;
@@ -100,12 +103,12 @@ contract LicenseToken is
             publicMetadataURI: publicMetadataURI,
             privateMetadataURI: privateMetadataURI,
             paymentInterval: paymentInterval,
-            maxMissedPayments: maxMissedPayments
+            maxMissedPayments: maxMissedPayments,
+            penaltyRateBPS: penaltyRateBPS
         });
 
         _mint(to, licenseId, supply, "");
 
-        // Update IPAsset active license count
         IIPAsset(ipAssetContract).updateActiveLicenseCount(ipAssetId, int256(supply));
 
         emit LicenseCreated(licenseId, ipAssetId, to, isExclusive, paymentInterval);
@@ -115,7 +118,6 @@ contract LicenseToken is
     function markExpired(uint256 licenseId) external {
         License memory license = licenses[licenseId];
 
-        // Perpetual licenses (expiryTime == 0) cannot expire
         if (license.expiryTime == 0) {
             revert LicenseIsPerpetual();
         }
@@ -284,6 +286,10 @@ contract LicenseToken is
 
     function getMaxMissedPayments(uint256 licenseId) external view returns (uint8) {
         return licenses[licenseId].maxMissedPayments;
+    }
+
+    function getPenaltyRate(uint256 licenseId) external view returns (uint16) {
+        return licenses[licenseId].penaltyRateBPS;
     }
 
     function _update(address from, address to, uint256[] memory ids, uint256[] memory values)

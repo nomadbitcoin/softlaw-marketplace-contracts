@@ -240,9 +240,15 @@ contract Marketplace is
         uint256 gracePeriodEnd = nextDue + PENALTY_GRACE_PERIOD;
         if (block.timestamp <= gracePeriodEnd) return 0;
 
+        // Get per-license penalty rate (monthly rate in basis points)
+        uint16 penaltyRateBPS = ILicenseToken(licenseContract).getPenaltyRate(licenseId);
+
         // Calculate penalty only on time after grace period
+        // Formula: penalty = baseAmount * monthlyRateBPS * daysLate / 10000 / 30
+        // Using 30 days as average month length for pro-rata daily calculation
         uint256 secondsOverdue = block.timestamp - gracePeriodEnd;
-        return (baseAmount * penaltyBasisPointsPerMonth * secondsOverdue) / (BASIS_POINTS * SECONDS_PER_MONTH);
+        uint256 daysLate = secondsOverdue / 1 days;
+        return (baseAmount * penaltyRateBPS * daysLate) / (BASIS_POINTS * 30);
     }
 
     function getTotalPaymentDue(address licenseContract, uint256 licenseId)

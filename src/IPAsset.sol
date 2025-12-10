@@ -80,6 +80,7 @@ contract IPAsset is
 
         // Call LicenseToken to mint the actual license
         // Using 0 for maxMissedPayments to apply DEFAULT_MAX_MISSED_PAYMENTS (3)
+        // Using 0 for penaltyRateBPS to apply DEFAULT_PENALTY_RATE (500 = 5% annual)
         uint256 licenseId = ILicenseToken(licenseTokenContract).mintLicense(
             licensee,
             ipTokenId,
@@ -90,7 +91,8 @@ contract IPAsset is
             terms,
             isExclusive,
             paymentInterval,
-            0   // maxMissedPayments: 0 = use default (3)
+            0,  // maxMissedPayments: 0 = use default (3)
+            0   // penaltyRateBPS: 0 = use default (500 = 5% annual)
         );
 
         emit LicenseRegistered(ipTokenId, licenseId, licensee, supply, isExclusive);

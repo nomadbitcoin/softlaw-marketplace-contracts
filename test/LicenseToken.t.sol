@@ -20,14 +20,12 @@ contract LicenseTokenTest is Test {
     address public admin;
     address public buyer;
     address public arbitrator;
-    address public revenueDistributor;
     uint256 public ipTokenId;
 
     function setUp() public {
         admin = address(this);
         buyer = address(0x123);
         arbitrator = address(0x456);
-        revenueDistributor = address(0x789);
 
         // Deploy mock IPAsset
         mockIPAsset = new MockIPAsset();
@@ -42,8 +40,7 @@ contract LicenseTokenTest is Test {
             "https://metadata.uri/",
             admin,
             address(mockIPAsset),
-            arbitrator,
-            revenueDistributor
+            arbitrator
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         licenseToken = LicenseToken(address(proxy));
@@ -97,8 +94,7 @@ contract LicenseTokenTest is Test {
             "https://new-uri/",
             address(0x999),
             address(0x888),
-            address(0x777),
-            address(0x666)
+            address(0x777)
         );
     }
 
@@ -213,7 +209,7 @@ contract LicenseTokenTest is Test {
             "terms",
             true,
             0
-        , 0);
+        , 0, 0);
         assertEq(licenseId, 0);
     }
 
@@ -231,7 +227,7 @@ contract LicenseTokenTest is Test {
             "terms",
             true,
             0
-        , 0);
+        , 0, 0);
     }
 
     // ==================== STORY 3.2: AC2 - Validate IP Asset Exists ====================
@@ -248,7 +244,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         (uint256 linkedIpAssetId,,,,,,,) = licenseToken.getLicenseInfo(licenseId);
         assertEq(linkedIpAssetId, ipTokenId);
@@ -269,7 +265,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
     }
 
     // ==================== STORY 3.2: AC3-4 - Exclusive License Supply Validation ====================
@@ -286,7 +282,7 @@ contract LicenseTokenTest is Test {
             "terms",
             true,
             0
-        , 0);
+        , 0, 0);
 
         (,,,,, bool isExclusive,,) = licenseToken.getLicenseInfo(licenseId);
         assertTrue(isExclusive);
@@ -305,7 +301,7 @@ contract LicenseTokenTest is Test {
             "terms",
             true,
             0
-        , 0);
+        , 0, 0);
     }
 
     // ==================== STORY 3.2: AC5-6 - Non-Exclusive License Supply ====================
@@ -322,7 +318,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         assertEq(licenseToken.balanceOf(buyer, licenseId), 100);
     }
@@ -343,7 +339,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             paymentInterval
-        , 0);
+        , 0, 0);
 
         (,,,, uint256 storedInterval,,,) = licenseToken.getLicenseInfo(licenseId);
         assertEq(storedInterval, paymentInterval);
@@ -361,7 +357,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         assertEq(licenseToken.balanceOf(buyer, licenseId), 5);
     }
@@ -379,7 +375,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         uint256 secondId = licenseToken.mintLicense(
             buyer,
@@ -391,7 +387,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         vm.stopPrank();
 
@@ -415,7 +411,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Verify the mock received the callback
         assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), int256(supply));
@@ -440,7 +436,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             paymentInterval
-        , 0);
+        , 0, 0);
     }
 
     // ==================== STORY 3.2: AC12 - Payment Interval ====================
@@ -457,7 +453,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         assertEq(licenseToken.getPaymentInterval(licenseId), 0);
         assertTrue(licenseToken.isOneTime(licenseId));
@@ -478,7 +474,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             paymentInterval
-        , 0);
+        , 0, 0);
 
         assertEq(licenseToken.getPaymentInterval(licenseId), paymentInterval);
         assertTrue(licenseToken.isRecurring(licenseId));
@@ -497,7 +493,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         assertTrue(licenseToken.isOneTime(licenseId));
     }
@@ -514,7 +510,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             7 days
-        , 0);
+        , 0, 0);
 
         assertTrue(licenseToken.isRecurring(licenseId));
     }
@@ -535,7 +531,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             interval
-        , 0);
+        , 0, 0);
 
         assertEq(licenseToken.getPaymentInterval(licenseId), interval);
     }
@@ -552,7 +548,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             1
-        , 0);
+        , 0, 0);
 
         assertTrue(licenseToken.isRecurring(licenseId));
     }
@@ -569,7 +565,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         assertTrue(licenseToken.isOneTime(licenseId));
     }
@@ -591,7 +587,7 @@ contract LicenseTokenTest is Test {
             "terms",
             true,
             paymentInterval
-        , 0);
+        , 0, 0);
 
         (
             uint256 returnedIpAssetId,
@@ -626,7 +622,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         assertTrue(licenseToken.isActiveLicense(licenseId));
     }
@@ -646,7 +642,7 @@ contract LicenseTokenTest is Test {
             "terms",
             true,
             0
-        , 0);
+        , 0, 0);
 
         // Try to mint second exclusive license for same IP
         vm.prank(address(mockIPAsset));
@@ -661,7 +657,7 @@ contract LicenseTokenTest is Test {
             "terms",
             true,
             0
-        , 0);
+        , 0, 0);
     }
 
     function testCanMintMultipleNonExclusiveLicenses() public {
@@ -677,7 +673,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Mint second non-exclusive license for same IP
         vm.prank(address(mockIPAsset));
@@ -691,7 +687,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         assertEq(id1, 0);
         assertEq(id2, 1);
@@ -711,7 +707,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             30 days
-        , 0);
+        , 0, 0);
 
         // Payment interval should remain 30 days
         assertEq(licenseToken.getPaymentInterval(licenseId), 30 days);
@@ -735,7 +731,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         (,, uint256 storedExpiryTime,,,,,) = licenseToken.getLicenseInfo(licenseId);
         assertEq(storedExpiryTime, expiryTime);
@@ -756,7 +752,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         (,, uint256 expiryTime,,,,,) = licenseToken.getLicenseInfo(licenseId);
         assertEq(expiryTime, 0);
@@ -775,7 +771,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         vm.expectRevert(ILicenseToken.LicenseIsPerpetual.selector);
         licenseToken.markExpired(licenseId);
@@ -797,7 +793,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Fast forward past expiry
         vm.warp(block.timestamp + 101);
@@ -824,7 +820,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Try to mark as expired before expiry time
         vm.expectRevert(ILicenseToken.LicenseNotYetExpired.selector);
@@ -845,7 +841,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Fast forward past expiry
         vm.warp(block.timestamp + 101);
@@ -874,7 +870,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Not expired yet
         assertFalse(licenseToken.isExpired(licenseId));
@@ -903,7 +899,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         vm.warp(block.timestamp + 101);
 
@@ -932,7 +928,7 @@ contract LicenseTokenTest is Test {
                 "terms",
                 false,
                 0
-            , 0);
+            , 0, 0);
         }
         vm.stopPrank();
 
@@ -964,7 +960,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         uint256 ipId2 = mockIPAsset.mint(admin);
         licenseIds[1] = licenseToken.mintLicense(
@@ -977,7 +973,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         uint256 ipId3 = mockIPAsset.mint(admin);
         licenseIds[2] = licenseToken.mintLicense(
@@ -990,7 +986,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
         vm.stopPrank();
 
         // Fast forward past expiry
@@ -1021,7 +1017,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Fast forward past expiry
         vm.warp(block.timestamp + 101);
@@ -1047,7 +1043,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         address recipient = address(0x999);
 
@@ -1074,7 +1070,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         uint256 ipId2 = mockIPAsset.mint(admin);
         uint256 licenseId2 = licenseToken.mintLicense(
@@ -1087,7 +1083,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
         vm.stopPrank();
 
         address recipient = address(0x999);
@@ -1126,7 +1122,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Verify initial count
         assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), int256(supply));
@@ -1154,7 +1150,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Verify both URIs stored
         string memory publicURI = licenseToken.getPublicMetadata(licenseId);
@@ -1180,7 +1176,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Anyone can access public metadata
         address randomUser = address(0x999);
@@ -1204,7 +1200,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Unauthorized user cannot access private metadata
         address unauthorized = address(0x999);
@@ -1238,7 +1234,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         address grantee = address(0x999);
 
@@ -1272,7 +1268,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         address nonOwner = address(0x999);
         address grantee = address(0x888);
@@ -1298,7 +1294,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         address grantee = address(0x999);
 
@@ -1336,7 +1332,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         address grantee = address(0x999);
 
@@ -1365,7 +1361,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         address grantee = address(0x999);
 
@@ -1400,7 +1396,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         address randomAccount = address(0x999);
 
@@ -1422,7 +1418,7 @@ contract LicenseTokenTest is Test {
             "terms",
             false,
             30 days
-        , 0);
+        , 0, 0);
 
         // Query functions should be efficient (< 10k gas each)
         uint256 gasBefore = gasleft();
@@ -1541,7 +1537,7 @@ contract LicenseTokenRevocationTest is Test {
     function testOnlyArbitratorCanRevokeLicense() public {
         // Mint license
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
 
         // Arbitrator revokes license
         vm.prank(arbitrator);
@@ -1555,7 +1551,7 @@ contract LicenseTokenRevocationTest is Test {
     function testNonArbitratorCannotRevokeLicense() public {
         // Mint license
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
 
         // Non-arbitrator attempts to revoke
         address nonArbitrator = address(0x999);
@@ -1569,7 +1565,7 @@ contract LicenseTokenRevocationTest is Test {
     function testMarketplaceCanRevokeForMissedPayments() public {
         // Mint recurring license
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0, 0);
 
         // Marketplace revokes for 4 missed payments
         vm.prank(marketplace);
@@ -1583,7 +1579,7 @@ contract LicenseTokenRevocationTest is Test {
     function testAnyoneCanRevokeForMissedPayments() public {
         // Mint recurring license with default maxMissedPayments = 3
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0, 0);
 
         // Anyone can call when conditions are met (missedCount >= maxMissedPayments)
         address anyUser = address(0x999);
@@ -1597,7 +1593,7 @@ contract LicenseTokenRevocationTest is Test {
     function testCannotAutoRevokeWithLessThan3MissedPayments() public {
         // Mint recurring license with default maxMissedPayments = 3
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0, 0);
 
         // Try to revoke with only 2 missed payments (needs >= 3)
         vm.prank(marketplace);
@@ -1616,7 +1612,7 @@ contract LicenseTokenRevocationTest is Test {
 
     function testRevokeLicenseSetsIsRevokedFlag() public {
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
 
         vm.prank(arbitrator);
         licenseToken.revokeLicense(licenseId, "Test reason");
@@ -1626,7 +1622,7 @@ contract LicenseTokenRevocationTest is Test {
 
     function testRevokeForMissedPaymentsSetsIsRevokedFlag() public {
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0, 0);
 
         vm.prank(marketplace);
         licenseToken.revokeForMissedPayments(licenseId, 4);
@@ -1640,7 +1636,7 @@ contract LicenseTokenRevocationTest is Test {
         uint256 supply = 5;
 
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, supply, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, supply, "public", "private", 0, "terms", false, 0, 0, 0);
 
         // Verify initial count
         assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), int256(supply));
@@ -1657,7 +1653,7 @@ contract LicenseTokenRevocationTest is Test {
         uint256 supply = 3;
 
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, supply, "public", "private", 0, "terms", false, 30 days, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, supply, "public", "private", 0, "terms", false, 30 days, 0, 0);
 
         // Verify initial count
         assertEq(mockIPAsset.getActiveLicenseCount(ipTokenId), int256(supply));
@@ -1675,12 +1671,12 @@ contract LicenseTokenRevocationTest is Test {
 
         // Mint exclusive license
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipId, 1, "public", "private", 0, "terms", true, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipId, 1, "public", "private", 0, "terms", true, 0, 0, 0);
 
         // Cannot mint another exclusive license
         vm.prank(address(mockIPAsset));
         vm.expectRevert(ILicenseToken.ExclusiveLicenseAlreadyExists.selector);
-        licenseToken.mintLicense(address(0x999), ipId, 1, "public", "private", 0, "terms", true, 0, 0);
+        licenseToken.mintLicense(address(0x999), ipId, 1, "public", "private", 0, "terms", true, 0, 0, 0);
 
         // Revoke exclusive license
         vm.prank(arbitrator);
@@ -1688,7 +1684,7 @@ contract LicenseTokenRevocationTest is Test {
 
         // Should now be able to mint another exclusive license
         vm.prank(address(mockIPAsset));
-        uint256 newLicenseId = licenseToken.mintLicense(address(0x999), ipId, 1, "public", "private", 0, "terms", true, 0, 0);
+        uint256 newLicenseId = licenseToken.mintLicense(address(0x999), ipId, 1, "public", "private", 0, "terms", true, 0, 0, 0);
 
         assertEq(newLicenseId, licenseId + 1);
     }
@@ -1698,7 +1694,7 @@ contract LicenseTokenRevocationTest is Test {
 
         // Mint exclusive license with recurring payment
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipId, 1, "public", "private", 0, "terms", true, 30 days, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipId, 1, "public", "private", 0, "terms", true, 30 days, 0, 0);
 
         // Auto-revoke exclusive license
         vm.prank(marketplace);
@@ -1706,7 +1702,7 @@ contract LicenseTokenRevocationTest is Test {
 
         // Should now be able to mint another exclusive license
         vm.prank(address(mockIPAsset));
-        uint256 newLicenseId = licenseToken.mintLicense(address(0x999), ipId, 1, "public", "private", 0, "terms", true, 0, 0);
+        uint256 newLicenseId = licenseToken.mintLicense(address(0x999), ipId, 1, "public", "private", 0, "terms", true, 0, 0, 0);
 
         assertEq(newLicenseId, licenseId + 1);
     }
@@ -1716,7 +1712,7 @@ contract LicenseTokenRevocationTest is Test {
     function testCannotTransferRevokedLicense() public {
         // Mint license
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
 
         // Revoke license
         vm.prank(arbitrator);
@@ -1733,7 +1729,7 @@ contract LicenseTokenRevocationTest is Test {
     function testCannotRevokeAlreadyRevokedLicense() public {
         // Mint license
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
 
         // Revoke license
         vm.prank(arbitrator);
@@ -1749,7 +1745,7 @@ contract LicenseTokenRevocationTest is Test {
 
     function testLicenseRevokedEvent() public {
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
 
         vm.expectEmit(true, false, false, true);
         emit ILicenseToken.LicenseRevoked(licenseId, "Violation of terms");
@@ -1760,7 +1756,7 @@ contract LicenseTokenRevocationTest is Test {
 
     function testAutoRevokedEvent() public {
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 30 days, 0, 0);
 
         vm.expectEmit(true, false, false, true);
         emit ILicenseToken.AutoRevoked(licenseId, 4);
@@ -1777,7 +1773,7 @@ contract LicenseTokenRevocationTest is Test {
 
         // Mint license
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
 
         // Transfer license
         vm.prank(buyer);
@@ -1908,7 +1904,7 @@ contract LicenseTokenAdminTest is Test {
         // Verify paused (will be tested by trying to mint)
         vm.prank(address(mockIPAsset));
         vm.expectRevert();
-        licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
     }
 
     function testOnlyAdminCanUnpause() public {
@@ -1920,7 +1916,7 @@ contract LicenseTokenAdminTest is Test {
 
         // Verify unpaused by successfully minting
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
         assertEq(licenseId, 0);
     }
 
@@ -1931,14 +1927,14 @@ contract LicenseTokenAdminTest is Test {
         // Try to mint license (should fail)
         vm.prank(address(mockIPAsset));
         vm.expectRevert();
-        licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
 
         // Unpause
         licenseToken.unpause();
 
         // Now should work
         vm.prank(address(mockIPAsset));
-        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0);
+        uint256 licenseId = licenseToken.mintLicense(buyer, ipTokenId, 1, "public", "private", 0, "terms", false, 0, 0, 0);
         assertEq(licenseId, 0);
     }
 
@@ -1984,7 +1980,7 @@ contract LicenseTokenAdminTest is Test {
             "terms",
             false,
             0
-        , 0);
+        , 0, 0);
 
         // Store state before upgrade
         (uint256 ipAssetId, uint256 supply,,,,,,) = licenseToken.getLicenseInfo(licenseId);
@@ -2060,7 +2056,8 @@ contract LicenseTokenAdminTest is Test {
             "Standard terms",
             false,
             30 days,
-            5  // Custom maxMissedPayments
+            5,  // Custom maxMissedPayments
+            0   // penaltyRateBPS (default)
         );
 
         // Verify custom value stored
@@ -2081,7 +2078,8 @@ contract LicenseTokenAdminTest is Test {
             "Standard terms",
             false,
             30 days,
-            0  // 0 = use DEFAULT_MAX_MISSED_PAYMENTS
+            0,  // 0 = use DEFAULT_MAX_MISSED_PAYMENTS
+            0   // penaltyRateBPS (default)
         );
 
         // Verify default value (3) applied
@@ -2105,7 +2103,8 @@ contract LicenseTokenAdminTest is Test {
             "Strict terms",
             false,
             30 days,
-            1  // Very strict - only 1 missed payment allowed
+            1,  // Very strict - only 1 missed payment allowed
+            0   // penaltyRateBPS (default)
         );
 
         // Mint license 2 with maxMissedPayments = 10
@@ -2120,7 +2119,8 @@ contract LicenseTokenAdminTest is Test {
             "Lenient terms",
             false,
             30 days,
-            10  // Very lenient - 10 missed payments allowed
+            10,  // Very lenient - 10 missed payments allowed
+            0    // penaltyRateBPS (default)
         );
 
         // Verify each license has its own threshold
@@ -2145,7 +2145,8 @@ contract LicenseTokenAdminTest is Test {
             "Standard terms",
             false,
             30 days,
-            7  // Custom value
+            7,  // Custom value
+            0   // penaltyRateBPS (default)
         );
 
         // Test getter function

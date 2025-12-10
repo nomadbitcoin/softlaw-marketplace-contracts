@@ -21,7 +21,8 @@ interface ILicenseToken {
      * @param publicMetadataURI Publicly accessible metadata URI
      * @param privateMetadataURI Private metadata URI (access controlled)
      * @param paymentInterval Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)
-     * @param maxMissedPayments Maximum number of missed payments before auto-revocation (1-255)
+     * @param maxMissedPayments Maximum number of missed payments before auto-revocation (1-255, 0 defaults to 3)
+     * @param penaltyRateBPS Penalty rate in basis points (100 bps = 1% per month, 0 defaults to 500, max 5000 = 50%)
      */
     struct License {
         uint256 ipAssetId;
@@ -34,6 +35,7 @@ interface ILicenseToken {
         string privateMetadataURI;
         uint256 paymentInterval;
         uint8 maxMissedPayments;
+        uint16 penaltyRateBPS;
     }
 
     // ==================== CUSTOM ERRORS ====================
@@ -85,6 +87,9 @@ interface ILicenseToken {
 
     /// @notice Thrown when maxMissedPayments is zero or exceeds allowed maximum
     error InvalidMaxMissedPayments();
+
+    /// @notice Thrown when penalty rate exceeds maximum allowed rate
+    error InvalidPenaltyRate();
 
     // ==================== EVENTS ====================
 
@@ -157,33 +162,40 @@ interface ILicenseToken {
     /**
      * @notice Initializes the LicenseToken contract (proxy pattern)
      * @dev Sets up ERC1155, AccessControl, and contract references
+     * @dev Grants DEFAULT_ADMIN_ROLE, ARBITRATOR_ROLE, and IP_ASSET_ROLE
+     * @dev Can only be called once due to initializer modifier
      * @param baseURI Base URI for token metadata
      * @param admin Address to receive all initial admin roles
-     * @param ipAsset Address of the IPAsset contract
-     * @param arbitrator Address of the GovernanceArbitrator contract
-     * @param revenueDistributor Address of the RevenueDistributor contract
+     * @param ipAsset Address of the IPAsset contract (granted IP_ASSET_ROLE)
+     * @param arbitrator Address of the GovernanceArbitrator contract (granted ARBITRATOR_ROLE)
      */
     function initialize(
         string memory baseURI,
         address admin,
         address ipAsset,
-        address arbitrator,
-        address revenueDistributor
+        address arbitrator
     ) external;
 
     /**
      * @notice Mints a new license token
-     * @dev Only callable by IP asset owner through IPAsset contract
+     * @dev Only callable by IP_ASSET_ROLE through IPAsset contract
+     * @dev Validates IP asset exists via hasActiveDispute() call
+     * @dev Exclusive licenses must have supply = 1 and only one can exist per IP asset
+     * @dev If maxMissedPayments = 0, defaults to DEFAULT_MAX_MISSED_PAYMENTS (3)
+     * @dev If penaltyRateBPS = 0, defaults to DEFAULT_PENALTY_RATE (500)
+     * @dev penaltyRateBPS must be <= MAX_PENALTY_RATE (5000)
+     * @dev Updates IP asset active license count
      * @param to Address to receive the license
      * @param ipAssetId The IP asset to license
-     * @param supply Number of license tokens to mint (ERC-1155 supply)
+     * @param supply Number of license tokens to mint (must be 1 for exclusive licenses)
      * @param publicMetadataURI Publicly accessible metadata
      * @param privateMetadataURI Private metadata (access controlled)
-     * @param expiryTime Unix timestamp when license expires
+     * @param expiryTime Unix timestamp when license expires (0 = perpetual)
      * @param terms Human-readable license terms
      * @param isExclusive Whether this is an exclusive license
      * @param paymentInterval Payment interval in seconds (0 = ONE_TIME, >0 = RECURRENT)
      * @param maxMissedPayments Maximum missed payments before auto-revocation (0 = use DEFAULT_MAX_MISSED_PAYMENTS)
+     * @param penaltyRateBPS Penalty rate in basis points per month (0 = use DEFAULT_PENALTY_RATE, max = MAX_PENALTY_RATE)
      * @return licenseId The ID of the newly minted license
      */
     function mintLicense(
@@ -196,18 +208,22 @@ interface ILicenseToken {
         string memory terms,
         bool isExclusive,
         uint256 paymentInterval,
-        uint8 maxMissedPayments
+        uint8 maxMissedPayments,
+        uint16 penaltyRateBPS
     ) external returns (uint256 licenseId);
 
     /**
      * @notice Marks a license as expired
      * @dev Can be called by anyone once expiry time has passed
+     * @dev Perpetual licenses (expiryTime = 0) cannot be expired
+     * @dev Updates IP asset active license count
      * @param licenseId The license to mark as expired
      */
     function markExpired(uint256 licenseId) external;
 
     /**
      * @notice Marks multiple licenses as expired in a single transaction
+     * @dev Continues on error - does not revert entire batch if individual license fails
      * @param licenseIds Array of license IDs to mark as expired
      */
     function batchMarkExpired(uint256[] memory licenseIds) external;
@@ -215,6 +231,8 @@ interface ILicenseToken {
     /**
      * @notice Revokes a license
      * @dev Only callable by ARBITRATOR_ROLE (dispute resolution)
+     * @dev Clears exclusive license flag if applicable
+     * @dev Updates IP asset active license count
      * @param licenseId The license to revoke
      * @param reason Human-readable revocation reason
      */
@@ -225,6 +243,8 @@ interface ILicenseToken {
      * @dev Anyone can call this function, but it will only succeed if missedCount >= maxMissedPayments
      * @dev Payment tracking is handled by Marketplace contract
      * @dev Spam prevention: built-in validation requires missedCount to meet threshold
+     * @dev Clears exclusive license flag if applicable
+     * @dev Updates IP asset active license count
      * @param licenseId The license to revoke
      * @param missedCount Number of missed payments (must meet maxMissedPayments threshold)
      */
@@ -239,7 +259,7 @@ interface ILicenseToken {
 
     /**
      * @notice Gets the private metadata URI for a license
-     * @dev Access controlled - only license holder and granted accounts
+     * @dev Access controlled - only license holder, granted accounts, and admin
      * @param licenseId The license ID
      * @return uri The private metadata URI
      */
@@ -285,15 +305,17 @@ interface ILicenseToken {
 
     /**
      * @notice Updates the GovernanceArbitrator contract address
-     * @dev Only callable by admin
-     * @param arbitrator New arbitrator contract address
+     * @dev Only callable by DEFAULT_ADMIN_ROLE
+     * @dev Revokes ARBITRATOR_ROLE from old address and grants to new address
+     * @param arbitrator New arbitrator contract address (cannot be zero address)
      */
     function setArbitratorContract(address arbitrator) external;
 
     /**
      * @notice Updates the IPAsset contract address
-     * @dev Only callable by admin
-     * @param ipAsset New IP asset contract address
+     * @dev Only callable by DEFAULT_ADMIN_ROLE
+     * @dev Revokes IP_ASSET_ROLE from old address and grants to new address
+     * @param ipAsset New IP asset contract address (cannot be zero address)
      */
     function setIPAssetContract(address ipAsset) external;
 
@@ -373,4 +395,11 @@ interface ILicenseToken {
      * @return maxMissed Maximum number of missed payments before auto-revocation
      */
     function getMaxMissedPayments(uint256 licenseId) external view returns (uint8 maxMissed);
+
+    /**
+     * @notice Gets the penalty rate for a license
+     * @param licenseId The license ID
+     * @return penaltyRate Penalty rate in basis points (100 bps = 1% per month)
+     */
+    function getPenaltyRate(uint256 licenseId) external view returns (uint16 penaltyRate);
 }
