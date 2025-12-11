@@ -2,12 +2,12 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
-import "../src/Marketplace.sol";
-import "../src/interfaces/IMarketplace.sol";
-import "../src/IPAsset.sol";
-import "../src/LicenseToken.sol";
-import "../src/RevenueDistributor.sol";
-import "../src/GovernanceArbitrator.sol";
+import "../../src/Marketplace.sol";
+import "../../src/interfaces/IMarketplace.sol";
+import "../../src/IPAsset.sol";
+import "../../src/LicenseToken.sol";
+import "../../src/RevenueDistributor.sol";
+import "../../src/GovernanceArbitrator.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract MarketplaceTest is Test {
