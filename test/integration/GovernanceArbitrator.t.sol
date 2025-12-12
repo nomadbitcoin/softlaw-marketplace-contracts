@@ -135,12 +135,11 @@ contract GovernanceArbitratorTest is Test {
         assertEq(dispute.submitter, licensee);
     }
 
-    function testThirdPartyCanSubmitDispute() public {
+    function testThirdPartyCannotSubmitDispute() public {
+        // Third parties cannot submit disputes (only IP owner or licensee)
+        vm.expectRevert(IGovernanceArbitrator.NotAuthorizedToDispute.selector);
         vm.prank(thirdParty);
-        uint256 disputeId = arbitrator.submitDispute(licenseId, "Infringement", "ipfs://proof");
-
-        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
-        assertEq(dispute.submitter, thirdParty);
+        arbitrator.submitDispute(licenseId, "Infringement", "ipfs://proof");
     }
 
     function testSubmitDisputeWithOptionalProof() public {
@@ -188,7 +187,8 @@ contract GovernanceArbitratorTest is Test {
     }
 
     function testDisputeStoresIPOwner() public {
-        vm.prank(thirdParty);
+        // Only IP owner or licensee can submit
+        vm.prank(ipOwner);
         uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
 
         IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
@@ -205,8 +205,9 @@ contract GovernanceArbitratorTest is Test {
     }
 
     function testDisputeSubmittedEventEmitted() public {
+        // Dispute IDs start from 1 (pre-increment)
         vm.expectEmit(true, true, true, true);
-        emit DisputeSubmitted(0, licenseId, ipOwner, "Violation");
+        emit DisputeSubmitted(1, licenseId, ipOwner, "Violation");
 
         vm.prank(ipOwner);
         arbitrator.submitDispute(licenseId, "Violation", "");
@@ -292,16 +293,19 @@ contract GovernanceArbitratorTest is Test {
         assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
     }
 
-    function testCannotResolveDisputeAfter30Days() public {
+    function testCanResolveDisputeAfter30Days() public {
         vm.prank(ipOwner);
         uint256 disputeId = arbitrator.submitDispute(licenseId, "Test", "");
 
         // Warp past 30 days
         vm.warp(block.timestamp + 31 days);
 
-        vm.expectRevert(IGovernanceArbitrator.DisputeResolutionOverdue.selector);
+        // Overdue disputes can still be resolved (deadline is informational, not enforced)
         vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, true, "Should fail");
+        arbitrator.resolveDispute(disputeId, true, "Late resolution");
+
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
     }
 
     function testCannotResolveAlreadyResolvedDispute() public {
@@ -478,50 +482,48 @@ contract GovernanceArbitratorTest is Test {
 
     // ==================== EXECUTE REVOCATION TESTS ====================
 
-    function testApprovedDisputeCanBeExecuted() public {
+    function testApprovedDisputeAutoRevokes() public {
         vm.prank(ipOwner);
         uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
 
         vm.prank(arbitratorRole);
         arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
 
-        vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
+        // Auto-revocation: license is revoked immediately after approval
+        assertTrue(licenseToken.isRevoked(licenseId));
+        assertFalse(licenseToken.isActiveLicense(licenseId));
 
+        // Status remains Approved (auto-execution is implicit)
         IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
-        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Executed));
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
     }
 
-    function testExecutionRevokesLicense() public {
+    function testResolveDisputeRevokesLicense() public {
         vm.prank(ipOwner);
         uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
-
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
 
         assertFalse(licenseToken.isRevoked(licenseId));
 
         vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
 
+        // License is automatically revoked when dispute is approved
         assertTrue(licenseToken.isRevoked(licenseId));
     }
 
-    function testExecutionUpdatesStatusToExecuted() public {
+    function testApprovedStatusRemainsAfterAutoRevocation() public {
         vm.prank(ipOwner);
         uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
 
         vm.prank(arbitratorRole);
         arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
 
-        IGovernanceArbitrator.Dispute memory disputeBefore = arbitrator.getDispute(disputeId);
-        assertEq(uint256(disputeBefore.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
+        // Status is Approved (auto-revocation happens but status stays Approved)
+        IGovernanceArbitrator.Dispute memory dispute = arbitrator.getDispute(disputeId);
+        assertEq(uint256(dispute.status), uint256(IGovernanceArbitrator.DisputeStatus.Approved));
 
-        vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
-
-        IGovernanceArbitrator.Dispute memory disputeAfter = arbitrator.getDispute(disputeId);
-        assertEq(uint256(disputeAfter.status), uint256(IGovernanceArbitrator.DisputeStatus.Executed));
+        // But license is revoked
+        assertTrue(licenseToken.isRevoked(licenseId));
     }
 
     function testRevokedLicenseIsPermanent() public {
@@ -531,9 +533,7 @@ contract GovernanceArbitratorTest is Test {
         vm.prank(arbitratorRole);
         arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
 
-        vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
-
+        // License is automatically revoked and cannot be un-revoked
         assertTrue(licenseToken.isRevoked(licenseId));
         assertFalse(licenseToken.isActiveLicense(licenseId));
     }
@@ -559,15 +559,13 @@ contract GovernanceArbitratorTest is Test {
         arbitrator.executeRevocation(disputeId);
     }
 
-    function testOnlyArbitratorCanExecuteRevocation() public {
+    function testOnlyArbitratorCanRevokeViaDispute() public {
         vm.prank(ipOwner);
         uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
 
+        // Auto-revocation happens during resolveDispute (arbitrator-only)
         vm.prank(arbitratorRole);
         arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
-
-        vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
 
         assertTrue(licenseToken.isRevoked(licenseId));
     }
@@ -589,18 +587,16 @@ contract GovernanceArbitratorTest is Test {
         arbitrator.executeRevocation(disputeId);
     }
 
-    function testExecutionEmitsLicenseRevokedEvent() public {
+    function testAutoRevocationEmitsLicenseRevokedEvent() public {
         vm.prank(ipOwner);
         uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "ipfs://proof");
 
-        vm.prank(arbitratorRole);
-        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
-
+        // Auto-revocation emits event during resolveDispute
         vm.expectEmit(true, true, false, false);
         emit LicenseRevoked(licenseId, disputeId);
 
         vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
+        arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
     }
 
     function testRevokedLicenseCannotBeUsedInMarketplace() public {
@@ -610,9 +606,7 @@ contract GovernanceArbitratorTest is Test {
         vm.prank(arbitratorRole);
         arbitrator.resolveDispute(disputeId, true, "Violation confirmed");
 
-        vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
-
+        // License is automatically revoked
         assertTrue(licenseToken.isRevoked(licenseId));
         assertFalse(licenseToken.isActiveLicense(licenseId));
     }

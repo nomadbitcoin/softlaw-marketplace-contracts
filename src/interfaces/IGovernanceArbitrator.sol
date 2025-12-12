@@ -71,6 +71,9 @@ interface IGovernanceArbitrator {
     /// @notice Thrown when caller does not have ARBITRATOR_ROLE
     error NotArbitrator();
 
+    /// @notice Thrown when caller is neither IP owner nor licensee
+    error NotAuthorizedToDispute();
+
     // ==================== EVENTS ====================
 
     /**

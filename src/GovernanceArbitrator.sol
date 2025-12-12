@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
 contract GovernanceArbitrator is
     IGovernanceArbitrator,
@@ -68,7 +69,14 @@ contract GovernanceArbitrator is
         IIPAsset ipAsset = IIPAsset(ipAssetContract);
         address ipOwner = IERC721(ipAssetContract).ownerOf(ipAssetId);
 
-        uint256 disputeId = _disputeIdCounter++;
+        // Only IP owner or licensee can submit disputes
+        bool isIPOwner = msg.sender == ipOwner;
+        bool isLicensee = IERC1155(licenseTokenContract).balanceOf(msg.sender, licenseId) > 0;
+        if (!isIPOwner && !isLicensee) {
+            revert NotAuthorizedToDispute();
+        }
+
+        uint256 disputeId = ++_disputeIdCounter;
 
         disputes[disputeId] = Dispute({
             licenseId: licenseId,
@@ -100,10 +108,6 @@ contract GovernanceArbitrator is
 
         if (dispute.status != DisputeStatus.Pending) revert DisputeAlreadyResolved();
 
-        if (this.isDisputeOverdue(disputeId)) {
-            revert DisputeResolutionOverdue();
-        }
-
         dispute.status = approve ? DisputeStatus.Approved : DisputeStatus.Rejected;
         dispute.resolver = msg.sender;
         dispute.resolvedAt = block.timestamp;
@@ -127,6 +131,12 @@ contract GovernanceArbitrator is
 
         if (!hasOtherPending) {
             IIPAsset(ipAssetContract).setDisputeStatus(ipAssetId, false);
+        }
+
+        // If dispute approved, automatically revoke the license
+        if (approve) {
+            licenseToken.revokeLicense(dispute.licenseId, resolutionReason);
+            emit LicenseRevoked(dispute.licenseId, disputeId);
         }
 
         emit DisputeResolved(disputeId, approve, msg.sender, resolutionReason);
