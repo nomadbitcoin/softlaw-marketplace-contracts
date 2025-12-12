@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import "./interfaces/ILicenseToken.sol";
 import "./interfaces/IIPAsset.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -121,12 +122,16 @@ contract LicenseToken is
         if (license.expiryTime == 0) {
             revert LicenseIsPerpetual();
         }
-        if (block.timestamp < license.expiryTime) revert LicenseNotYetExpired();
+        if (block.timestamp <= license.expiryTime) revert LicenseNotYetExpired();
         if (_isExpired[licenseId]) revert AlreadyMarkedExpired();
 
         _isExpired[licenseId] = true;
 
-        IIPAsset(ipAssetContract).updateActiveLicenseCount(license.ipAssetId, -int256(license.supply));
+        // Only decrement active license count if license isn't already revoked
+        // Revoked licenses already decremented the count
+        if (!license.isRevoked) {
+            IIPAsset(ipAssetContract).updateActiveLicenseCount(license.ipAssetId, -int256(license.supply));
+        }
 
         emit LicenseExpired(licenseId);
     }
@@ -163,7 +168,9 @@ contract LicenseToken is
         }
 
         License memory license = licenses[licenseId];
-        IIPAsset(ipAssetContract).updateActiveLicenseCount(license.ipAssetId, -int256(license.supply));
+        if (!_isExpired[licenseId]) {
+            IIPAsset(ipAssetContract).updateActiveLicenseCount(license.ipAssetId, -int256(license.supply));
+        }
     }
 
     function getPublicMetadata(uint256 licenseId) external view returns (string memory) {
@@ -286,6 +293,26 @@ contract LicenseToken is
 
     function getMaxMissedPayments(uint256 licenseId) external view returns (uint8) {
         return licenses[licenseId].maxMissedPayments;
+    }
+
+    function setPenaltyRate(uint256 licenseId, uint16 penaltyRateBPS) external whenNotPaused {
+        License storage license = licenses[licenseId];
+        uint256 ipAssetId = license.ipAssetId;
+
+        // Only IP owner can set penalty rate
+        address ipOwner = IERC721(ipAssetContract).ownerOf(ipAssetId);
+        if (msg.sender != ipOwner) revert NotIPOwner();
+
+        // Validate penalty rate
+        if (penaltyRateBPS > MAX_PENALTY_RATE) {
+            revert InvalidPenaltyRate();
+        }
+        if (penaltyRateBPS == 0) {
+            penaltyRateBPS = DEFAULT_PENALTY_RATE;
+        }
+
+        license.penaltyRateBPS = penaltyRateBPS;
+        emit PenaltyRateUpdated(licenseId, penaltyRateBPS);
     }
 
     function getPenaltyRate(uint256 licenseId) external view returns (uint16) {

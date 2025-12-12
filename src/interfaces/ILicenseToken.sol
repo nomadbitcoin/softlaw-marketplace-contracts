@@ -70,6 +70,9 @@ interface ILicenseToken {
     /// @notice Thrown when non-license owner attempts owner-only operation
     error NotLicenseOwner();
 
+    /// @notice Thrown when non-IP owner attempts IP-owner-only operation
+    error NotIPOwner();
+
     /// @notice Thrown when insufficient missed payments for auto-revocation
     error InsufficientMissedPayments();
 
@@ -128,6 +131,13 @@ interface ILicenseToken {
      * @param missedPayments Number of missed payments that triggered revocation
      */
     event AutoRevoked(uint256 indexed licenseId, uint256 missedPayments);
+
+    /**
+     * @notice Emitted when a license's penalty rate is updated
+     * @param licenseId The license ID
+     * @param penaltyRateBPS The new penalty rate in basis points
+     */
+    event PenaltyRateUpdated(uint256 indexed licenseId, uint16 penaltyRateBPS);
 
     /**
      * @notice Emitted when private metadata access is granted
@@ -395,6 +405,13 @@ interface ILicenseToken {
      * @return maxMissed Maximum number of missed payments before auto-revocation
      */
     function getMaxMissedPayments(uint256 licenseId) external view returns (uint8 maxMissed);
+
+    /**
+     * @notice Sets the penalty rate for a specific license
+     * @param licenseId The license ID
+     * @param penaltyRateBPS Penalty rate in basis points (100 bps = 1% per month)
+     */
+    function setPenaltyRate(uint256 licenseId, uint16 penaltyRateBPS) external;
 
     /**
      * @notice Gets the penalty rate for a license
