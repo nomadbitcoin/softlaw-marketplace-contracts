@@ -495,8 +495,8 @@ contract MarketplaceTest is Test {
         
         vm.prank(buyer);
         marketplace.buyListing{value: 0.1 ether}(listingId);
-        
-        assertEq(licenseToken.balanceOf(buyer, licenseId), 1);
+
+        assertEq(licenseToken.balanceOf(buyer, licenseId), 5); // License was minted with supply of 5
     }
     
     function testPlatformFeeDeduction() public {
@@ -1968,7 +1968,7 @@ contract MarketplaceTest is Test {
         // Calculate expected amounts
         uint256 platformFee = (150 ether * 250) / 10000; // 2.5%
         uint256 remaining = 150 ether - platformFee;
-        uint256 royalty = (remaining * 1000) / 10000; // 10%
+        uint256 royalty = (150 ether * 1000) / 10000; // 10% of full sale price
         uint256 sellerProceeds = remaining - royalty;
 
         // Verify seller (original creator) received royalty
@@ -2101,7 +2101,7 @@ contract MarketplaceTest is Test {
         // Calculate expected amounts
         uint256 platformFee = (15 ether * 250) / 10000; // 2.5%
         uint256 remaining = 15 ether - platformFee;
-        uint256 royalty = (remaining * 1000) / 10000; // 10%
+        uint256 royalty = (15 ether * 1000) / 10000; // 10% of full sale price
         uint256 sellerProceeds = remaining - royalty;
 
         // Verify seller (IP owner) received royalty
@@ -2129,9 +2129,16 @@ contract MarketplaceTest is Test {
         vm.prank(admin);
         revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
 
-        // Primary sale: seller sells to buyer
+        // Primary sale: seller sells to buyer via marketplace
         vm.prank(seller);
-        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        bytes32 primaryListing = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+
+        vm.deal(buyer, 100 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 100 ether}(primaryListing);
 
         // Secondary sale via offer: other makes offer, buyer accepts
         vm.deal(other, 150 ether);
@@ -2158,7 +2165,7 @@ contract MarketplaceTest is Test {
         // Calculate expected amounts
         uint256 platformFee = (150 ether * 250) / 10000; // 2.5%
         uint256 remaining = 150 ether - platformFee;
-        uint256 royalty = (remaining * 1000) / 10000; // 10%
+        uint256 royalty = (150 ether * 1000) / 10000; // 10% of full sale price
         uint256 sellerProceeds = remaining - royalty;
 
         // Verify seller (original creator) received royalty
@@ -2186,11 +2193,11 @@ contract MarketplaceTest is Test {
         vm.prank(admin);
         revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
 
-        // Seller mints a license
+        // Seller mints a license to themselves
         vm.prank(seller);
         uint256 newLicenseId = ipAsset.mintLicense(
             newIpTokenId,
-            buyer,
+            seller,
             1,
             "ipfs://public",
             "ipfs://private",
@@ -2199,6 +2206,17 @@ contract MarketplaceTest is Test {
             false,
             0
         );
+
+        // Primary sale: seller sells license to buyer via marketplace
+        vm.prank(seller);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(seller);
+        bytes32 primaryListing = marketplace.createListing(address(licenseToken), newLicenseId, 10 ether, false);
+
+        vm.deal(buyer, 10 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 10 ether}(primaryListing);
 
         // Secondary sale via offer: other makes offer, buyer accepts
         vm.deal(other, 15 ether);
@@ -2225,7 +2243,7 @@ contract MarketplaceTest is Test {
         // Calculate expected amounts
         uint256 platformFee = (15 ether * 250) / 10000; // 2.5%
         uint256 remaining = 15 ether - platformFee;
-        uint256 royalty = (remaining * 1000) / 10000; // 10%
+        uint256 royalty = (15 ether * 1000) / 10000; // 10% of full sale price
         uint256 sellerProceeds = remaining - royalty;
 
         // Verify seller (IP owner) received royalty
@@ -2291,7 +2309,7 @@ contract MarketplaceTest is Test {
         // Calculate expected amounts
         uint256 platformFee = (200 ether * 250) / 10000; // 2.5%
         uint256 remaining = 200 ether - platformFee;
-        uint256 totalRoyalty = (remaining * 1000) / 10000; // 10%
+        uint256 totalRoyalty = (200 ether * 1000) / 10000; // 10% of full sale price
 
         uint256 creator1Royalty = (totalRoyalty * 4000) / 10000; // 40%
         uint256 creator2Royalty = (totalRoyalty * 3500) / 10000; // 35%
@@ -2323,9 +2341,16 @@ contract MarketplaceTest is Test {
         vm.prank(admin);
         revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
 
-        // Primary sale
+        // Primary sale via marketplace
         vm.prank(seller);
-        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        bytes32 primaryListing = marketplace.createListing(address(ipAsset), newIpTokenId, 50 ether, true);
+
+        vm.deal(buyer, 50 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 50 ether}(primaryListing);
 
         // Secondary sale for exactly 100 ETH
         vm.prank(buyer);
@@ -2343,10 +2368,10 @@ contract MarketplaceTest is Test {
         // Calculate expected royalty
         uint256 platformFee = (100 ether * 250) / 10000; // 2.5 ETH
         uint256 remaining = 100 ether - platformFee; // 97.5 ETH
-        uint256 expectedRoyalty = (remaining * 1000) / 10000; // 9.75 ETH
+        uint256 expectedRoyalty = (100 ether * 1000) / 10000; // 10 ETH (10% of full sale price)
 
         uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
-        assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedRoyalty, "Royalty should be exactly 9.75 ETH");
+        assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedRoyalty, "Royalty should be exactly 10 ETH");
     }
 
     function testPrimarySaleNoRoyalty() public {
@@ -2402,9 +2427,16 @@ contract MarketplaceTest is Test {
         vm.prank(admin);
         revenueDistributor.setAssetRoyalty(newIpTokenId, 1500); // 15% custom rate
 
-        // Primary sale
+        // Primary sale via marketplace
         vm.prank(seller);
-        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        bytes32 primaryListing = marketplace.createListing(address(ipAsset), newIpTokenId, 50 ether, true);
+
+        vm.deal(buyer, 50 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 50 ether}(primaryListing);
 
         // Secondary sale
         vm.prank(buyer);
@@ -2422,7 +2454,7 @@ contract MarketplaceTest is Test {
         // Calculate expected royalty with 15% rate
         uint256 platformFee = (100 ether * 250) / 10000; // 2.5%
         uint256 remaining = 100 ether - platformFee;
-        uint256 expectedRoyalty = (remaining * 1500) / 10000; // 15%
+        uint256 expectedRoyalty = (100 ether * 1500) / 10000; // 15% of full sale price
 
         uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
         assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedRoyalty, "Should use custom 15% royalty rate");
@@ -2445,11 +2477,11 @@ contract MarketplaceTest is Test {
         vm.prank(admin);
         revenueDistributor.setAssetRoyalty(ipAssetId123, 1000); // 10%
 
-        // Seller mints license #456 for IP Asset #123
+        // Seller mints license #456 for IP Asset #123 to themselves
         vm.prank(seller);
         uint256 license456 = ipAsset.mintLicense(
             ipAssetId123,
-            buyer,
+            seller,
             1,
             "ipfs://public",
             "ipfs://private",
@@ -2462,6 +2494,17 @@ contract MarketplaceTest is Test {
         // Verify license correctly maps to IP Asset #123
         (uint256 extractedIpAssetId,,,,,,,) = licenseToken.getLicenseInfo(license456);
         assertEq(extractedIpAssetId, ipAssetId123, "License should map to correct IP Asset");
+
+        // Primary sale: seller sells license to buyer via marketplace
+        vm.prank(seller);
+        licenseToken.setApprovalForAll(address(marketplace), true);
+
+        vm.prank(seller);
+        bytes32 primaryListing = marketplace.createListing(address(licenseToken), license456, 5 ether, false);
+
+        vm.deal(buyer, 5 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 5 ether}(primaryListing);
 
         // Secondary sale of license
         vm.prank(buyer);
@@ -2480,7 +2523,7 @@ contract MarketplaceTest is Test {
         uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
         uint256 platformFee = (10 ether * 250) / 10000;
         uint256 remaining = 10 ether - platformFee;
-        uint256 expectedRoyalty = (remaining * 1000) / 10000;
+        uint256 expectedRoyalty = (10 ether * 1000) / 10000; // 10% of full sale price
 
         assertEq(sellerBalanceAfter - sellerBalanceBefore, expectedRoyalty, "Royalty should go to IP Asset owner");
     }
@@ -2546,9 +2589,16 @@ contract MarketplaceTest is Test {
         vm.prank(admin);
         revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
 
-        // Primary sale: seller → buyer
+        // Primary sale: seller → buyer via marketplace
         vm.prank(seller);
-        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        bytes32 primaryListing = marketplace.createListing(address(ipAsset), newIpTokenId, 50 ether, true);
+
+        vm.deal(buyer, 50 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 50 ether}(primaryListing);
 
         // Secondary sale #1: buyer → other
         vm.prank(buyer);
@@ -2567,7 +2617,7 @@ contract MarketplaceTest is Test {
         uint256 sellerBalanceAfter1 = revenueDistributor.getBalance(seller);
         uint256 platformFee1 = (100 ether * 250) / 10000;
         uint256 remaining1 = 100 ether - platformFee1;
-        uint256 royalty1 = (remaining1 * 1000) / 10000;
+        uint256 royalty1 = (100 ether * 1000) / 10000; // 10% of full sale price
         assertEq(sellerBalanceAfter1 - sellerBalanceBefore1, royalty1, "First secondary sale royalty");
 
         // Secondary sale #2: other → buyer (buyer buying it back)
@@ -2588,7 +2638,7 @@ contract MarketplaceTest is Test {
         uint256 sellerBalanceAfter2 = revenueDistributor.getBalance(seller);
         uint256 platformFee2 = (150 ether * 250) / 10000;
         uint256 remaining2 = 150 ether - platformFee2;
-        uint256 royalty2 = (remaining2 * 1000) / 10000;
+        uint256 royalty2 = (150 ether * 1000) / 10000; // 10% of full sale price
         assertEq(sellerBalanceAfter2 - sellerBalanceBefore2, royalty2, "Second secondary sale royalty");
     }
 
@@ -2608,9 +2658,16 @@ contract MarketplaceTest is Test {
         vm.prank(admin);
         revenueDistributor.setAssetRoyalty(newIpTokenId, 100); // 1% royalty
 
-        // Primary sale
+        // Primary sale via marketplace
         vm.prank(seller);
-        ipAsset.safeTransferFrom(seller, buyer, newIpTokenId);
+        ipAsset.approve(address(marketplace), newIpTokenId);
+
+        vm.prank(seller);
+        bytes32 primaryListing = marketplace.createListing(address(ipAsset), newIpTokenId, 50 ether, true);
+
+        vm.deal(buyer, 50 ether);
+        vm.prank(buyer);
+        marketplace.buyListing{value: 50 ether}(primaryListing);
 
         // Secondary sale
         vm.prank(buyer);
@@ -2629,8 +2686,8 @@ contract MarketplaceTest is Test {
         // With 1% royalty, calculate expected amounts
         uint256 platformFee = (100 ether * 250) / 10000; // 2.5%
         uint256 remaining = 100 ether - platformFee; // 97.5 ETH
-        uint256 royalty = (remaining * 100) / 10000; // 1% = 0.975 ETH
-        uint256 expectedSellerProceeds = remaining - royalty; // 96.525 ETH
+        uint256 royalty = (100 ether * 100) / 10000; // 1% of full sale price = 1 ETH
+        uint256 expectedSellerProceeds = remaining - royalty; // 96.5 ETH
 
         uint256 sellerBalanceAfter = revenueDistributor.getBalance(seller);
         uint256 buyerBalanceAfter = revenueDistributor.getBalance(buyer);

@@ -18,6 +18,7 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
     mapping(uint256 => Split) private _ipSplits;
     mapping(address => uint256) private _balances;
     mapping(uint256 => uint256) public assetRoyaltyBasisPoints;
+    mapping(uint256 => bool) private _hasCustomRoyalty;
 
     /// @notice Role for configuring revenue splits
     bytes32 public constant CONFIGURATOR_ROLE = keccak256("CONFIGURATOR_ROLE");
@@ -69,7 +70,8 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
     function distributePayment(
         uint256 ipAssetId,
         uint256 amount,
-        address seller
+        address seller,
+        bool isPrimarySale
     ) external payable nonReentrant {
         if (msg.value != amount) revert IncorrectPaymentAmount();
 
@@ -92,10 +94,6 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
             emit PaymentDistributed(ipAssetId, amount, seller, true); // Treat as primary sale
             return;
         }
-
-        // 2. Auto-detect sale type
-        bool isPrimarySale = _isRecipientInSplit(seller, split.recipients);
-
         if (isPrimarySale) {
             // PRIMARY SALE: Full amount to split recipients
             for (uint256 i = 0; i < split.recipients.length; i++) {
@@ -105,7 +103,12 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
         } else {
             // SECONDARY SALE: Royalty to split, remainder to seller
             uint256 royaltyRate = getAssetRoyalty(ipAssetId);
-            uint256 royaltyAmount = (remaining * royaltyRate) / BASIS_POINTS;
+            uint256 royaltyAmount = (amount * royaltyRate) / BASIS_POINTS;
+
+            // Cap royalty at remaining amount to prevent over-allocation
+            if (royaltyAmount > remaining) {
+                royaltyAmount = remaining;
+            }
 
             // Distribute royalty to split recipients
             for (uint256 i = 0; i < split.recipients.length; i++) {
@@ -113,8 +116,10 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
                 _balances[split.recipients[i]] += royaltyShare;
             }
 
-            // Seller gets remainder
-            _balances[seller] += (remaining - royaltyAmount);
+            // Seller gets remainder after royalty
+            if (royaltyAmount < remaining) {
+                _balances[seller] += (remaining - royaltyAmount);
+            }
         }
 
         emit PaymentDistributed(ipAssetId, amount, seller, isPrimarySale);
@@ -157,12 +162,15 @@ contract RevenueDistributor is IRevenueDistributor, ReentrancyGuard, AccessContr
     {
         if (basisPoints > BASIS_POINTS) revert InvalidRoyaltyRate();
         assetRoyaltyBasisPoints[ipAssetId] = basisPoints;
+        _hasCustomRoyalty[ipAssetId] = true;
         emit AssetRoyaltyUpdated(ipAssetId, basisPoints);
     }
 
     function getAssetRoyalty(uint256 ipAssetId) public view returns (uint256) {
-        uint256 customRate = assetRoyaltyBasisPoints[ipAssetId];
-        return customRate > 0 ? customRate : defaultRoyaltyBasisPoints;
+        if (_hasCustomRoyalty[ipAssetId]) {
+            return assetRoyaltyBasisPoints[ipAssetId];
+        }
+        return defaultRoyaltyBasisPoints;
     }
 
     function grantConfiguratorRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {

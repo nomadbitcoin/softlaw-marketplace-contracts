@@ -51,6 +51,37 @@ contract RevenueDistributorTest is Test {
         mockIPAsset.setOwner(1, ipOwner);
     }
 
+    /// @notice Helper function to simulate a primary sale and mark an IP asset as sold
+    /// @param ipAssetId The IP asset ID to mark as sold
+    /// @param recipients Array of split recipients
+    /// @param shares Array of split shares (must sum to 10000)
+    /// @param withdrawAfter If true, recipients withdraw their balances after primary sale
+    function _simulatePrimarySale(
+        uint256 ipAssetId,
+        address[] memory recipients,
+        uint256[] memory shares,
+        bool withdrawAfter
+    ) internal {
+        // Configure split
+        vm.prank(admin);
+        distributor.configureSplit(ipAssetId, recipients, shares);
+
+        // Execute primary sale (any recipient can be seller for primary)
+        vm.deal(address(this), 10 ether);
+        distributor.distributePayment{value: 10 ether}(ipAssetId, 10 ether, recipients[0], true);
+
+        // Optionally withdraw to clean balances for secondary sale testing
+        if (withdrawAfter) {
+            for (uint256 i = 0; i < recipients.length; i++) {
+                uint256 balance = distributor.getBalance(recipients[i]);
+                if (balance > 0) {
+                    vm.prank(recipients[i]);
+                    distributor.withdraw();
+                }
+            }
+        }
+    }
+
     function testConstructorSetsVariables() public {
         MockIPAsset newMockIPAsset = new MockIPAsset();
         RevenueDistributor newDistributor = new RevenueDistributor(treasury, PLATFORM_FEE, DEFAULT_ROYALTY, address(newMockIPAsset));
@@ -159,7 +190,7 @@ contract RevenueDistributorTest is Test {
 
         // Distribute 1 ether (primary sale - seller is in split)
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // Platform fee = 1 ether * 2.5% = 0.025 ether (accumulated in balance)
         uint256 treasuryBalance = distributor.getBalance(treasury);
@@ -210,7 +241,7 @@ contract RevenueDistributorTest is Test {
         
         // Distribute payment (primary sale - seller is in split)
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         uint256 recipient1BalanceBefore = recipient1.balance;
         
@@ -234,7 +265,7 @@ contract RevenueDistributorTest is Test {
         
         // Distribute payment (primary sale - seller is in split)
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // recipient2 tries to withdraw (has no balance)
         vm.prank(recipient2);
@@ -257,7 +288,7 @@ contract RevenueDistributorTest is Test {
         
         // Distribute payment (primary sale - seller is in split)
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // First withdrawal succeeds
         vm.prank(recipient1);
@@ -288,7 +319,7 @@ contract RevenueDistributorTest is Test {
 
         // Distribution should not revert even if one recipient fails (primary sale)
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // recipient1 should still receive their share
         uint256 balance = distributor.getBalance(recipient1);
@@ -313,7 +344,7 @@ contract RevenueDistributorTest is Test {
         
         // Distribute 10 ether (primary sale - seller is in split)
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1, true);
 
         // After platform fee (2.5%), remaining = 9.75 ether
         uint256 balance1 = distributor.getBalance(recipient1);
@@ -336,7 +367,7 @@ contract RevenueDistributorTest is Test {
         distributor.configureSplit(1, recipients, shares);
 
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         vm.warp(block.timestamp + 30 days);
         
@@ -392,7 +423,7 @@ contract RevenueDistributorTest is Test {
 
         // Action: Distribute 1 ether payment (falls back to owner)
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(ipAssetId, 1 ether, owner);
+        distributor.distributePayment{value: 1 ether}(ipAssetId, 1 ether, owner, true);
 
         // Assert: Platform fee accumulated (2.5% = 0.025 ether)
         uint256 treasuryBalance = distributor.getBalance(treasury);
@@ -407,7 +438,7 @@ contract RevenueDistributorTest is Test {
         // IP asset 888 doesn't exist (no owner set)
         vm.deal(address(this), 1 ether);
         vm.expectRevert("ERC721: invalid token ID");
-        distributor.distributePayment{value: 1 ether}(888, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(888, 1 ether, recipient1, true);
     }
 
     function testDistributeWithIncorrectPaymentAmountReverts() public {
@@ -421,7 +452,7 @@ contract RevenueDistributorTest is Test {
 
         vm.deal(address(this), 1 ether);
         vm.expectRevert(IRevenueDistributor.IncorrectPaymentAmount.selector);
-        distributor.distributePayment{value: 1 ether}(1, 0.5 ether, recipient1); // msg.value != amount
+        distributor.distributePayment{value: 1 ether}(1, 0.5 ether, recipient1, true); // msg.value != amount
     }
 
     function testGrantConfiguratorRoleToIPAssetContract() public {
@@ -582,7 +613,7 @@ contract RevenueDistributorTest is Test {
         distributor.configureSplit(1, recipients, shares);
 
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // Action: Query balance
         uint256 balance = distributor.getBalance(recipient1);
@@ -641,7 +672,7 @@ contract RevenueDistributorTest is Test {
 
         // Action: Distribute 10 ether payment (primary sale)
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1, true);
 
         // Assert: Platform fee accumulated (2.5% of 10 ether = 0.25 ether)
         uint256 treasuryBalance = distributor.getBalance(treasury);
@@ -671,9 +702,9 @@ contract RevenueDistributorTest is Test {
 
         // Action: Distribute 3 payments (primary sales)
         vm.deal(address(this), 30 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1, true);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1, true);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1, true);
 
         // Assert: Platform fees accumulated across all distributions
         // 3 * (10 ether * 2.5%) = 0.75 ether
@@ -738,7 +769,7 @@ contract RevenueDistributorTest is Test {
 
         // Primary sale: seller is in split
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // All funds (minus platform fee) go to split recipients
         uint256 balance = distributor.getBalance(recipient1);
@@ -758,7 +789,7 @@ contract RevenueDistributorTest is Test {
 
         // Primary sale: seller (recipient2) is in split
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient2);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient2, true);
 
         // All funds (minus platform fee) split between recipients
         uint256 balance1 = distributor.getBalance(recipient1);
@@ -775,20 +806,20 @@ contract RevenueDistributorTest is Test {
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
 
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
+        // Simulate primary sale
+        _simulatePrimarySale(1, recipients, shares, true);
 
         // Secondary sale: seller is NOT in split
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller, false);
 
-        // Royalty (10% of 0.975 = 0.0975) goes to recipient1
-        // Remainder (0.975 - 0.0975 = 0.8775) goes to seller
+        // Royalty (10% of 1 ETH = 0.1) goes to recipient1
+        // Remainder (1 - 0.025 platform - 0.1 royalty = 0.875) goes to seller
         uint256 recipientBalance = distributor.getBalance(recipient1);
         uint256 sellerBalance = distributor.getBalance(seller);
 
-        assertEq(recipientBalance, 0.0975 ether);
-        assertEq(sellerBalance, 0.8775 ether);
+        assertEq(recipientBalance, 0.1 ether);
+        assertEq(sellerBalance, 0.875 ether);
     }
 
     // Primary Sale Distribution Tests (5)
@@ -802,7 +833,7 @@ contract RevenueDistributorTest is Test {
         distributor.configureSplit(1, recipients, shares);
 
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient1, true);
 
         // Platform fee: 10 * 2.5% = 0.25 ether
         // Remaining: 9.75 ether all to recipient1
@@ -824,7 +855,7 @@ contract RevenueDistributorTest is Test {
         distributor.configureSplit(1, recipients, shares);
 
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient2);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, recipient2, true);
 
         // Platform fee: 0.25 ether, remaining: 9.75 ether
         assertEq(distributor.getBalance(recipient1), 4.875 ether); // 50%
@@ -844,7 +875,7 @@ contract RevenueDistributorTest is Test {
         distributor.configureSplit(1, recipients, shares);
 
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // Platform fee: 0.025 ether, remaining: 0.975 ether
         assertEq(distributor.getBalance(recipient1), 0.4875 ether);
@@ -863,7 +894,7 @@ contract RevenueDistributorTest is Test {
         distributor.configureSplit(1, recipients, shares);
 
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // Platform fee: 0.025 ether, remaining: 0.975 ether
         assertEq(distributor.getBalance(recipient1), 0.6825 ether); // 70%
@@ -880,7 +911,7 @@ contract RevenueDistributorTest is Test {
         distributor.configureSplit(1, recipients, shares);
 
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // Platform fee should be 2.5%
         uint256 platformFee = distributor.getBalance(treasury);
@@ -896,18 +927,18 @@ contract RevenueDistributorTest is Test {
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
 
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
+        // Simulate primary sale
+        _simulatePrimarySale(1, recipients, shares, true);
 
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller, false);
 
-        // Platform fee: 0.25 ether, remaining: 9.75 ether
-        // Royalty (10%): 0.975 ether to recipient1
-        // Seller gets: 8.775 ether
-        assertEq(distributor.getBalance(treasury), 0.25 ether);
-        assertEq(distributor.getBalance(recipient1), 0.975 ether);
-        assertEq(distributor.getBalance(seller), 8.775 ether);
+        // Platform fee: 0.25 ether (2.5% of 10)
+        // Royalty: 1.0 ether (10% of 10 ETH sale price)
+        // Seller gets: 10 - 0.25 - 1.0 = 8.75 ether
+        assertEq(distributor.getBalance(treasury), 0.5 ether); // 0.25 from primary + 0.25 from secondary
+        assertEq(distributor.getBalance(recipient1), 1.0 ether);
+        assertEq(distributor.getBalance(seller), 8.75 ether);
     }
 
     function testDistributePaymentSecondarySaleMultipleRecipients() public {
@@ -920,20 +951,19 @@ contract RevenueDistributorTest is Test {
         shares[0] = 6000; // 60%
         shares[1] = 4000; // 40%
 
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
+        // Simulate primary sale
+        _simulatePrimarySale(1, recipients, shares, true);
 
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller, false);
 
-        // Platform fee: 0.25 ether, remaining: 9.75 ether
-        // Royalty (10% of 9.75 = 0.975) split by shares
-        // Recipient1: 0.975 * 60% = 0.585
-        // Recipient2: 0.975 * 40% = 0.39
-        // Seller: 9.75 - 0.975 = 8.775
-        assertEq(distributor.getBalance(recipient1), 0.585 ether);
-        assertEq(distributor.getBalance(recipient2), 0.39 ether);
-        assertEq(distributor.getBalance(seller), 8.775 ether);
+        // Royalty (10% of 10 ETH = 1.0 ETH) split by shares
+        // Recipient1: 1.0 * 60% = 0.6
+        // Recipient2: 1.0 * 40% = 0.4
+        // Seller: 10 - 0.25 (platform) - 1.0 (royalty) = 8.75
+        assertEq(distributor.getBalance(recipient1), 0.6 ether);
+        assertEq(distributor.getBalance(recipient2), 0.4 ether);
+        assertEq(distributor.getBalance(seller), 8.75 ether);
     }
 
     function testSecondarySaleRoyaltyDistribution() public {
@@ -944,14 +974,14 @@ contract RevenueDistributorTest is Test {
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
 
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
+        // Simulate primary sale
+        _simulatePrimarySale(1, recipients, shares, true);
 
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller, false);
 
-        // Royalty (10% of 0.975 = 0.0975) to recipient1
-        assertEq(distributor.getBalance(recipient1), 0.0975 ether);
+        // Royalty (10% of 1 ETH = 0.1 ETH) to recipient1
+        assertEq(distributor.getBalance(recipient1), 0.1 ether);
     }
 
     function testSecondarySaleSellerRemainder() public {
@@ -962,14 +992,14 @@ contract RevenueDistributorTest is Test {
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
 
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
+        // Simulate primary sale
+        _simulatePrimarySale(1, recipients, shares, true);
 
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller, false);
 
-        // Seller gets remainder: 0.975 - 0.0975 = 0.8775
-        assertEq(distributor.getBalance(seller), 0.8775 ether);
+        // Seller gets: 1 - 0.025 (platform) - 0.1 (royalty) = 0.875
+        assertEq(distributor.getBalance(seller), 0.875 ether);
     }
 
     function testSecondarySaleCustomRoyaltyRate() public {
@@ -984,17 +1014,16 @@ contract RevenueDistributorTest is Test {
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
 
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
+        // Simulate primary sale
+        _simulatePrimarySale(1, recipients, shares, true);
 
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller, false);
 
-        // Platform fee: 0.25, remaining: 9.75
-        // Royalty (20% of 9.75 = 1.95) to recipient1
-        // Seller: 9.75 - 1.95 = 7.8
-        assertEq(distributor.getBalance(recipient1), 1.95 ether);
-        assertEq(distributor.getBalance(seller), 7.8 ether);
+        // Royalty (20% of 10 ETH = 2.0) to recipient1
+        // Seller: 10 - 0.25 (platform) - 2.0 (royalty) = 7.75
+        assertEq(distributor.getBalance(recipient1), 2.0 ether);
+        assertEq(distributor.getBalance(seller), 7.75 ether);
     }
 
     function testSecondarySaleDefaultRoyaltyRate() public {
@@ -1005,14 +1034,15 @@ contract RevenueDistributorTest is Test {
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
 
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
+        // Simulate primary sale to mark asset as sold
+        _simulatePrimarySale(1, recipients, shares, true);
 
+        // SECONDARY SALE: Test royalty distribution
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller, false);
 
-        // Default royalty (10% of 9.75 = 0.975) to recipient1
-        assertEq(distributor.getBalance(recipient1), 0.975 ether);
+        // Default royalty (10% of 10 ETH = 1.0 ETH) to recipient1
+        assertEq(distributor.getBalance(recipient1), 1.0 ether);
     }
 
     function testSecondarySaleZeroRoyalty() public {
@@ -1029,18 +1059,18 @@ contract RevenueDistributorTest is Test {
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10000;
 
-        vm.prank(admin);
-        distributor.configureSplit(1, recipients, shares);
+        // Simulate primary sale
+        _simulatePrimarySale(1, recipients, shares, true);
 
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller, false);
 
-        // Royalty (0.01% of 9.75) to recipient1
+        // Royalty (0.01% of 10 ETH = 0.001 ETH) to recipient1
         // Seller gets almost everything
         uint256 recipientBalance = distributor.getBalance(recipient1);
         uint256 sellerBalance = distributor.getBalance(seller);
 
-        assertLt(recipientBalance, 0.001 ether); // Very small royalty
+        assertEq(recipientBalance, 0.001 ether);
         assertGt(sellerBalance, 9.74 ether); // Seller gets almost all
     }
 
@@ -1060,7 +1090,7 @@ contract RevenueDistributorTest is Test {
         distributor.configureSplit(1, recipients, shares);
 
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller);
+        distributor.distributePayment{value: 10 ether}(1, 10 ether, seller, false);
 
         // Platform fee: 0.25, remaining: 9.75
         // Royalty (100%): all 9.75 to recipient1
@@ -1111,27 +1141,27 @@ contract RevenueDistributorTest is Test {
         vm.prank(admin);
         distributor.configureSplit(1, recipients, shares);
 
-        // First sale: primary (seller1 is in split)
+        // First sale: primary (recipient1 is the seller)
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
-        // Second sale: secondary (seller2 is NOT in split)
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller2);
+        // Second sale: secondary (seller2)
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller2, false);
 
-        // Third sale: secondary again
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller1); // seller1 NOT in split for this IP
+        // Third sale: secondary again (seller1)
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller1, false);
 
         // Verify balances accumulated correctly
         uint256 recipientBalance = distributor.getBalance(recipient1);
         uint256 seller2Balance = distributor.getBalance(seller2);
         uint256 seller1Balance = distributor.getBalance(seller1);
 
-        // recipient1: 0.975 (primary) + 0.0975 (secondary) + 0.0975 (secondary) = 1.17
-        assertEq(recipientBalance, 1.17 ether);
-        // seller2: 0.8775 (secondary)
-        assertEq(seller2Balance, 0.8775 ether);
-        // seller1: 0.8775 (secondary)
-        assertEq(seller1Balance, 0.8775 ether);
+        // recipient1: 0.975 (primary) + 0.1 (secondary royalty) + 0.1 (secondary royalty) = 1.175
+        assertEq(recipientBalance, 1.175 ether);
+        // seller2: 0.875 (secondary: 0.975 remaining - 0.1 royalty)
+        assertEq(seller2Balance, 0.875 ether);
+        // seller1: 0.875 (secondary: 0.975 remaining - 0.1 royalty)
+        assertEq(seller1Balance, 0.875 ether);
     }
 
     function testCreatorResellingOwnIP() public {
@@ -1146,7 +1176,7 @@ contract RevenueDistributorTest is Test {
         // Creator (recipient1) resells their own IP
         // Should be treated as primary sale
         vm.deal(address(this), 1 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // All goes to recipient1 (no royalty to self)
         assertEq(distributor.getBalance(recipient1), 0.975 ether);
@@ -1167,10 +1197,10 @@ contract RevenueDistributorTest is Test {
 
         // Primary sale
         vm.deal(address(this), 10 ether);
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, recipient1, true);
 
         // Secondary sale
-        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller);
+        distributor.distributePayment{value: 1 ether}(1, 1 ether, seller, false);
 
         // Verify all balances sum correctly
         uint256 treasuryBal = distributor.getBalance(treasury);
@@ -1181,11 +1211,11 @@ contract RevenueDistributorTest is Test {
         // Total: 2 ether distributed
         // Treasury: 2 * 0.025 = 0.05
         // Primary sale remaining: 0.975, split 50/50
-        // Secondary sale remaining: 0.975, royalty 10% (0.0975), split 50/50, seller gets 0.8775
+        // Secondary sale remaining: 0.975, royalty 10% of full price (0.1), split 50/50, seller gets 0.875
         assertEq(treasuryBal, 0.05 ether);
-        assertEq(recipient1Bal, 0.4875 ether + 0.04875 ether); // Primary + secondary royalty share
-        assertEq(recipient2Bal, 0.4875 ether + 0.04875 ether); // Primary + secondary royalty share
-        assertEq(sellerBal, 0.8775 ether);
+        assertEq(recipient1Bal, 0.4875 ether + 0.05 ether); // Primary + secondary royalty share
+        assertEq(recipient2Bal, 0.4875 ether + 0.05 ether); // Primary + secondary royalty share
+        assertEq(sellerBal, 0.875 ether);
 
         // Total should equal 2 ether
         uint256 total = treasuryBal + recipient1Bal + recipient2Bal + sellerBal;

@@ -229,18 +229,14 @@ contract IntegrationTest is Test {
         assertEq(dispute.submitter, creator);
         assertTrue(dispute.status == IGovernanceArbitrator.DisputeStatus.Pending);
 
-        // 3. Arbitrator reviews and approves
+        // 3. Arbitrator reviews and approves (auto-revokes license)
         vm.prank(arbitratorRole);
         arbitrator.resolveDispute(disputeId, true, "Evidence confirms violation");
 
         dispute = arbitrator.getDispute(disputeId);
         assertTrue(dispute.status == IGovernanceArbitrator.DisputeStatus.Approved);
-        
-        // 4. Execute revocation
-        vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
-        
-        // 5. Verify license is revoked
+
+        // 4. Verify license is automatically revoked
         assertTrue(licenseToken.isRevoked(licenseId));
         
         // 6. Verify revoked license cannot be transferred
@@ -383,14 +379,11 @@ contract IntegrationTest is Test {
         vm.prank(creator);
         uint256 disputeId = arbitrator.submitDispute(licenseId, "Violation", "");
 
-        // 4. Revoke license (which also clears dispute flag since no other pending disputes)
+        // 4. Resolve dispute (auto-revokes license and clears dispute flag since no other pending disputes)
         vm.prank(arbitratorRole);
         arbitrator.resolveDispute(disputeId, true, "Approved");
 
-        vm.prank(arbitratorRole);
-        arbitrator.executeRevocation(disputeId);
-
-        // 5. License revoked and dispute flag cleared, so now can burn
+        // 5. License auto-revoked and dispute flag cleared, so now can burn
         vm.prank(creator);
         ipAsset.burn(ipTokenId);
 

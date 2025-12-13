@@ -123,12 +123,12 @@ interface IRevenueDistributor {
     /**
      * @notice Distributes a payment according to configured splits
      * @dev Deducts platform fee then splits remainder among recipients
-     * @dev Auto-detects primary vs secondary sale based on seller presence in split recipients
      * @param ipAssetId The IP asset ID
      * @param amount Payment amount to distribute
-     * @param seller Address of the seller (used for auto-detection)
+     * @param seller Address of the seller (receives remainder for secondary sales)
+     * @param isPrimarySale True for primary sales (100% to split), false for secondary (royalty to split, remainder to seller)
      */
-    function distributePayment(uint256 ipAssetId, uint256 amount, address seller) external payable;
+    function distributePayment(uint256 ipAssetId, uint256 amount, address seller, bool isPrimarySale) external payable;
 
     /**
      * @notice Withdraws accumulated funds

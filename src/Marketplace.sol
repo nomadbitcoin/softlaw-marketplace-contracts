@@ -23,13 +23,14 @@ contract Marketplace is
     uint256 public constant MAX_PENALTY_RATE = 1000;
     uint256 public constant BASIS_POINTS = 10_000;
     uint256 public constant SECONDS_PER_MONTH = 2_592_000;
-    uint256 public constant MAX_MISSED_PAYMENTS = 3;
     uint256 public constant PENALTY_GRACE_PERIOD = 3 days;
 
     mapping(bytes32 => Listing) public listings;
     mapping(bytes32 => Offer) public offers;
     mapping(bytes32 => uint256) public escrow;
     mapping(uint256 => RecurringPayment) public recurring;
+    mapping(uint256 => bool) private _ipAssetSold;
+    mapping(bytes32 => bool) private _licenseSold;  // keccak256(nftContract, tokenId)
 
     address public revenueDistributor;
     uint256 public penaltyBasisPointsPerMonth;
@@ -92,8 +93,15 @@ contract Marketplace is
         listing.isActive = false;
 
         uint256 ipAssetId;
+        bool isPrimarySale;
+
         if (listing.isERC721) {
             ipAssetId = listing.tokenId;
+            // First sale is primary, all subsequent sales are secondary
+            isPrimarySale = !_ipAssetSold[ipAssetId];
+            if (isPrimarySale) {
+                _ipAssetSold[ipAssetId] = true;
+            }
         } else {
             uint256 paymentInterval = ILicenseToken(listing.nftContract).getPaymentInterval(listing.tokenId);
             if (paymentInterval > 0) {
@@ -104,10 +112,16 @@ contract Marketplace is
                 });
             }
             (ipAssetId,,,,,,,) = ILicenseToken(listing.nftContract).getLicenseInfo(listing.tokenId);
+
+            bytes32 licenseKey = keccak256(abi.encodePacked(listing.nftContract, listing.tokenId));
+            isPrimarySale = !_licenseSold[licenseKey];
+            if (isPrimarySale) {
+                _licenseSold[licenseKey] = true;
+            }
         }
 
         _transferNFT(listing.nftContract, listing.seller, msg.sender, listing.tokenId, listing.isERC721);
-        _distributePayment(ipAssetId, listing.price, listing.seller);
+        _distributePayment(ipAssetId, listing.price, listing.seller, isPrimarySale);
 
         emit Sale(listingId, msg.sender, listing.seller, listing.price);
 
@@ -140,7 +154,7 @@ contract Marketplace is
     function acceptOffer(bytes32 offerId) external whenNotPaused nonReentrant {
         Offer storage offer = offers[offerId];
         if (!offer.isActive) revert OfferNotActive();
-        if (block.timestamp >= offer.expiryTime) revert OfferExpired();
+        if (block.timestamp > offer.expiryTime) revert OfferExpired();
 
         offer.isActive = false;
         escrow[offerId] = 0;
@@ -155,15 +169,28 @@ contract Marketplace is
         if (!_isOwner(offer.nftContract, offer.tokenId, msg.sender, isERC721)) revert NotTokenOwner();
 
         uint256 ipAssetId;
+        bool isPrimarySale;
+
         if (isERC721) {
             IERC721(offer.nftContract).safeTransferFrom(msg.sender, offer.buyer, offer.tokenId);
             ipAssetId = offer.tokenId;
+
+            isPrimarySale = !_ipAssetSold[ipAssetId];
+            if (isPrimarySale) {
+                _ipAssetSold[ipAssetId] = true;
+            }
         } else {
             IERC1155(offer.nftContract).safeTransferFrom(msg.sender, offer.buyer, offer.tokenId, 1, "");
             (ipAssetId,,,,,,,) = ILicenseToken(offer.nftContract).getLicenseInfo(offer.tokenId);
+
+            bytes32 licenseKey = keccak256(abi.encodePacked(offer.nftContract, offer.tokenId));
+            isPrimarySale = !_licenseSold[licenseKey];
+            if (isPrimarySale) {
+                _licenseSold[licenseKey] = true;
+            }
         }
 
-        _distributePayment(ipAssetId, offer.price, msg.sender);
+        _distributePayment(ipAssetId, offer.price, msg.sender, isPrimarySale);
 
         emit OfferAccepted(offerId, msg.sender);
     }
@@ -178,12 +205,13 @@ contract Marketplace is
         if (isERC721) {
             IERC721(nftContract).safeTransferFrom(from, to, tokenId);
         } else {
-            IERC1155(nftContract).safeTransferFrom(from, to, tokenId, 1, "");
+            uint256 balance = IERC1155(nftContract).balanceOf(from, tokenId);
+            IERC1155(nftContract).safeTransferFrom(from, to, tokenId, balance, "");
         }
     }
 
-    function _distributePayment(uint256 ipAssetId, uint256 totalAmount, address seller) internal {
-        IRevenueDistributor(revenueDistributor).distributePayment{value: totalAmount}(ipAssetId, totalAmount, seller);
+    function _distributePayment(uint256 ipAssetId, uint256 totalAmount, address seller, bool isPrimarySale) internal {
+        IRevenueDistributor(revenueDistributor).distributePayment{value: totalAmount}(ipAssetId, totalAmount, seller, isPrimarySale);
     }
 
     function cancelOffer(bytes32 offerId) external {
@@ -278,13 +306,8 @@ contract Marketplace is
         (uint256 ipAssetId,,,,,,,) = ILicenseToken(licenseContract).getLicenseInfo(licenseId);
 
         // Recurring payments are subscription fees (not sales), and should distribute
-        // 100% of funds to IP owners without royalty deductions. To achieve this via
-        // auto-detection, we pass any split recipient as "seller" to trigger primary
-        // sale logic. Any recipient works - we just need an address IN the split array.
-        (address[] memory recipients,) = IRevenueDistributor(revenueDistributor).ipSplits(ipAssetId);
-        address seller = recipients.length > 0 ? recipients[0] : msg.sender;
-
-        _distributePayment(ipAssetId, totalAmount, seller);
+        // 100% of funds to IP owners without royalty deductions (primary sale logic).
+        _distributePayment(ipAssetId, totalAmount, msg.sender, true);
 
         emit RecurringPaymentMade(licenseId, msg.sender, baseAmount, penalty, block.timestamp);
 
@@ -301,9 +324,19 @@ contract Marketplace is
 
         if (IERC1155(licenseContract).balanceOf(msg.sender, licenseId) == 0) revert NotTokenOwner();
 
-        uint256 missed = getMissedPayments(licenseContract, licenseId);
-        if (missed > MAX_MISSED_PAYMENTS) {
-            ILicenseToken(licenseContract).revokeForMissedPayments(licenseId, missed);
+        // Check if payment is actually due (can pay early but only within the same interval period)
+        uint256 lastPaid = recurring[licenseId].lastPaymentTime;
+        if (lastPaid > 0) {
+            // Don't allow payment if less than half the interval has passed (prevents gaming the system)
+            uint256 minTimeBetweenPayments = interval / 2;
+            if (block.timestamp < lastPaid + minTimeBetweenPayments) revert PaymentNotDueYet();
+        }
+
+        // Check current overdue periods for auto-revocation (not cumulative count)
+        uint256 currentOverdue = getMissedPayments(licenseContract, licenseId);
+        uint256 maxMissed = ILicenseToken(licenseContract).getMaxMissedPayments(licenseId);
+        if (currentOverdue > maxMissed) {
+            ILicenseToken(licenseContract).revokeForMissedPayments(licenseId, currentOverdue);
             revert LicenseRevokedForMissedPayments();
         }
     }

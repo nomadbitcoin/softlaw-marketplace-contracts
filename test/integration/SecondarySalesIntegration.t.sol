@@ -177,7 +177,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee2 = (150 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 150 ether - platformFee2;
-        uint256 royalty2 = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty2 = (150 ether * 1000) / BASIS_POINTS; // 10% of full sale price
         uint256 bobProceeds = remaining2 - royalty2;
 
         assertEq(
@@ -192,7 +192,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee3 = (200 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining3 = 200 ether - platformFee3;
-        uint256 royalty3 = (remaining3 * 1000) / BASIS_POINTS;
+        uint256 royalty3 = (200 ether * 1000) / BASIS_POINTS; // 10% of full sale price
         uint256 charlieProceeds = remaining3 - royalty3;
 
         assertEq(
@@ -248,7 +248,7 @@ contract SecondarySalesIntegrationTest is Test {
         // Verify secondary sale: royalty split 50/30/20, remainder to Dave
         uint256 platformFee2 = (150 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 150 ether - platformFee2;
-        uint256 royalty = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty = (150 ether * 1000) / BASIS_POINTS; // 10% of full sale price
         uint256 daveProceeds = remaining2 - royalty;
 
         uint256 aliceRoyalty = (royalty * 5000) / BASIS_POINTS;
@@ -296,7 +296,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee = (100 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining = 100 ether - platformFee;
-        uint256 royalty = (remaining * 500) / BASIS_POINTS; // 5%
+        uint256 royalty = (100 ether * 500) / BASIS_POINTS; // 5% of full sale price
         uint256 bobProceeds = remaining - royalty;
 
         assertEq(revenueDistributor.getBalance(alice), aliceBalanceAfterPrimary + royalty, "Alice gets 5% royalty");
@@ -329,7 +329,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee = (100 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining = 100 ether - platformFee;
-        uint256 royalty = (remaining * DEFAULT_ROYALTY_BPS) / BASIS_POINTS; // 10%
+        uint256 royalty = (100 ether * DEFAULT_ROYALTY_BPS) / BASIS_POINTS; // 10% of full sale price
 
         assertEq(
             revenueDistributor.getBalance(alice), aliceBalanceAfterPrimary + royalty, "Alice gets default 10% royalty"
@@ -348,7 +348,7 @@ contract SecondarySalesIntegrationTest is Test {
         uint256[] memory shares = new uint256[](1);
         shares[0] = 10_000;
 
-        uint256 ipAssetId = _mintAndConfigureIP(alice, recipients, shares, 0); // 0 = use default
+        uint256 ipAssetId = _mintAndConfigureIP(alice, recipients, shares, DEFAULT_ROYALTY_BPS); // Use default 10%
 
         // Primary sale
         _createAndBuyListing(alice, ipAssetId, 100 ether, bob, true);
@@ -357,15 +357,15 @@ contract SecondarySalesIntegrationTest is Test {
         // Secondary sale
         _createAndBuyListing(bob, ipAssetId, 150 ether, charlie, true);
 
-        // Verify: Alice gets default 10% royalty (not 0%)
+        // Verify: Alice gets default 10% royalty
         uint256 platformFee = (150 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining = 150 ether - platformFee;
-        uint256 royalty = (remaining * DEFAULT_ROYALTY_BPS) / BASIS_POINTS;
+        uint256 royalty = (150 ether * DEFAULT_ROYALTY_BPS) / BASIS_POINTS; // 10% of full sale price
 
         assertEq(
             revenueDistributor.getBalance(alice),
             aliceBalanceAfterPrimary + royalty,
-            "Alice gets default 10% royalty (0 means use default)"
+            "Alice gets default 10% royalty"
         );
 
         _verifyBalanceAccounting(250 ether);
@@ -407,7 +407,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee2 = (15 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 15 ether - platformFee2;
-        uint256 royalty2 = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty2 = (15 ether * 1000) / BASIS_POINTS; // 10% of full sale price
         uint256 bobProceeds = remaining2 - royalty2;
 
         assertEq(
@@ -458,7 +458,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee2 = (30 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 30 ether - platformFee2;
-        uint256 royalty = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty = (30 ether * 1000) / BASIS_POINTS; // 10% of full sale price
 
         assertEq(
             revenueDistributor.getBalance(alice),
@@ -503,7 +503,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee2 = (15 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 15 ether - platformFee2;
-        uint256 royalty2 = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty2 = (15 ether * 1000) / BASIS_POINTS; // 10% of full sale price
         uint256 bobProceeds = remaining2 - royalty2;
 
         assertEq(revenueDistributor.getBalance(alice), remaining1 + royalty2, "Alice gets primary + royalty");
@@ -538,7 +538,7 @@ contract SecondarySalesIntegrationTest is Test {
         uint256 remaining1 = 10 ether - platformFee1;
         uint256 platformFee2 = (15 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 15 ether - platformFee2;
-        uint256 royalty2 = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty2 = (15 ether * 1000) / BASIS_POINTS; // 10% of full sale price
 
         assertEq(revenueDistributor.getBalance(alice), remaining1 + royalty2, "Alice gets primary + royalty");
 
@@ -646,12 +646,12 @@ contract SecondarySalesIntegrationTest is Test {
         _createAndBuyListing(bob, ipAssetId, 150 ether, charlie, true);
         uint256 platformFee2 = (150 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 150 ether - platformFee2;
-        uint256 royalty2 = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty2 = (150 ether * 1000) / BASIS_POINTS; // 10% of full sale price
 
         _createAndBuyListing(charlie, ipAssetId, 200 ether, dave, true);
         uint256 platformFee3 = (200 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining3 = 200 ether - platformFee3;
-        uint256 royalty3 = (remaining3 * 1000) / BASIS_POINTS;
+        uint256 royalty3 = (200 ether * 1000) / BASIS_POINTS; // 10% of full sale price
 
         assertEq(
             revenueDistributor.getBalance(alice),
@@ -681,14 +681,17 @@ contract SecondarySalesIntegrationTest is Test {
         // Verify: Alice gets 100% royalty, Bob gets 0%
         assertEq(revenueDistributor.getBalance(bob), 0, "Seller gets nothing with 100% royalty");
 
-        uint256 platformFee2 = (150 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
-        uint256 remaining2 = 150 ether - platformFee2;
-
         uint256 platformFee1 = (100 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining1 = 100 ether - platformFee1;
 
-        assertEq(revenueDistributor.getBalance(alice), remaining1 + remaining2, "Alice gets 100% of both sales");
+        uint256 platformFee2 = (150 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
+        uint256 remaining2 = 150 ether - platformFee2;
+        // 100% royalty capped at remaining amount to prevent over-allocation
+        uint256 royalty2 = remaining2;
 
+        assertEq(revenueDistributor.getBalance(alice), remaining1 + royalty2, "Alice gets 100% of both sales");
+
+        // Balance accounting now works correctly with capped royalty
         _verifyBalanceAccounting(250 ether);
     }
 
@@ -711,7 +714,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee = (100 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining = 100 ether - platformFee;
-        uint256 royalty = (remaining * 1) / BASIS_POINTS; // 0.01%
+        uint256 royalty = (100 ether * 1) / BASIS_POINTS; // 0.01% of full sale price
 
         assertEq(revenueDistributor.getBalance(alice), aliceBalanceAfterPrimary + royalty, "Alice gets 0.01% royalty");
 
@@ -744,12 +747,12 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee2 = (120 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 120 ether - platformFee2;
-        uint256 royalty2 = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty2 = (120 ether * 1000) / BASIS_POINTS; // 10% of full sale price
         // Alice receives royalty2 but also pays 120 ether for purchase (net: royalty2 - platformFee2 - remaining2)
 
         uint256 platformFee3 = (150 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining3 = 150 ether - platformFee3;
-        uint256 royalty3 = (remaining3 * 1000) / BASIS_POINTS;
+        uint256 royalty3 = (150 ether * 1000) / BASIS_POINTS; // 10% of full sale price
         uint256 aliceProceeds3 = remaining3 - royalty3;
 
         // Alice's final balance: primary + royalty from sale 2 + (seller proceeds + royalty) from sale 3
@@ -836,7 +839,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee2 = (120 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 120 ether - platformFee2;
-        uint256 royalty2 = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty2 = (120 ether * 1000) / BASIS_POINTS; // 10% of full sale price
         uint256 bobProceeds = remaining2 - royalty2;
 
         assertEq(revenueDistributor.getBalance(alice), remaining1 + royalty2, "Alice gets primary + royalty from offer");
@@ -885,7 +888,7 @@ contract SecondarySalesIntegrationTest is Test {
 
         uint256 platformFee2 = (150 ether * PLATFORM_FEE_BPS) / BASIS_POINTS;
         uint256 remaining2 = 150 ether - platformFee2;
-        uint256 royalty2 = (remaining2 * 1000) / BASIS_POINTS;
+        uint256 royalty2 = (150 ether * 1000) / BASIS_POINTS; // 10% of full sale price
 
         assertEq(
             revenueDistributor.getBalance(alice),

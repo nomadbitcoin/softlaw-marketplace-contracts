@@ -101,6 +101,9 @@ interface IMarketplace {
     /// @notice Thrown when native token transfer fails
     error TransferFailed();
 
+    /// @notice Thrown when attempting to make a payment before it is due
+    error PaymentNotDueYet();
+
     // ==================== EVENTS ====================
 
     /**
