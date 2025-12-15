@@ -6,10 +6,8 @@ How payments are distributed through the system.
 
 **The system automatically detects whether a sale is primary or secondary:**
 
-- **Primary Sale**: Seller is in the split recipients → Platform fee applies
-- **Secondary Sale**: Seller is NOT in split recipients → Royalty fee applies
-
-This detection happens automatically in `distributePayment()` based on the seller address.
+- **Primary Sale**: First sale of an IP asset or license → Platform fee applies
+- **Secondary Sale**: Subsequent sales of the same IP asset or license → Royalty fee applies
 
 ## Payment Distribution Overview
 
@@ -62,15 +60,15 @@ graph TB
 
 ### Distribution Rules
 
-**For Primary Sales** (seller is in split recipients):
+**For Primary Sales** (first sale of an IP asset or license):
 1. **Platform fee** is calculated on total amount and deducted first (e.g., 2.5%)
 2. **If revenue split configured**, remaining amount split by shares (must sum to 100%)
 3. **If no split configured**, all remaining amount goes to IP asset owner
 
-**For Secondary Sales** (seller NOT in split recipients):
+**For Secondary Sales** (subsequent sales):
 1. **Royalty fee** is calculated on total amount (default or per-asset custom rate)
 2. **Royalty amount** is distributed according to revenue split configuration
-3. **Remaining amount** goes to the seller (not in split recipients)
+3. **Remaining amount** goes to the seller
 
 **General Rules**:
 4. **Balances accumulate** until recipient calls withdraw()
@@ -78,7 +76,7 @@ graph TB
 
 ## Primary Sale Payment Flow
 
-When the seller is in the split recipients (e.g., IP owner selling their first license):
+When this is the first sale of an IP asset or license:
 
 ```mermaid
 sequenceDiagram
@@ -92,7 +90,7 @@ sequenceDiagram
     Buyer->>MP: buyListing() + 1000 ETH
     MP->>RD: distributePayment(ipAssetId, 1000, ipOwner) + 1000 ETH
 
-    Note over RD: AUTO-DETECT: Seller IS in split recipients<br/>→ PRIMARY SALE
+    Note over RD: Marketplace tracks first sale<br/>→ PRIMARY SALE
 
     Note over RD: Platform fee = 2.5% (25 ETH)
     Note over RD: Net amount = 975 ETH
@@ -120,7 +118,7 @@ sequenceDiagram
 
 ## Secondary Sale Payment Flow
 
-When the seller is NOT in the split recipients (e.g., licensee reselling their license):
+When this is a subsequent sale of a previously sold IP asset or license:
 
 ```mermaid
 sequenceDiagram
@@ -134,7 +132,7 @@ sequenceDiagram
     Buyer->>MP: buyListing() + 1000 ETH
     MP->>RD: distributePayment(ipAssetId, 1000, seller) + 1000 ETH
 
-    Note over RD: AUTO-DETECT: Seller NOT in split recipients<br/>→ SECONDARY SALE
+    Note over RD: Marketplace tracks subsequent sale<br/>→ SECONDARY SALE
 
     Note over RD: Royalty rate = 10% (100 ETH)
     Note over RD: Seller gets = 900 ETH

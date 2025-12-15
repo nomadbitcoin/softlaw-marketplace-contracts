@@ -106,7 +106,7 @@ graph TB
 **Key Functions:**
 - Implements EIP-2981 royalty standard
 - Configures revenue splits per IP asset
-- **Auto-detects primary vs secondary sales** based on seller presence in split recipients
+- **Handles primary vs secondary sales** (tracked by Marketplace contract)
 - **Per-asset royalty rates** (custom or default)
 - Handles platform fees (deducted first for primary, royalties for secondary)
 - Manages withdrawals for all recipients

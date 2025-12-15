@@ -7,7 +7,6 @@
 - [System Overview](architecture/overview.md)
 - [User Flows](architecture/user-flows.md)
 - [Revenue Distribution](architecture/revenue-flow.md)
-- [State Machines](architecture/state-machines.md)
 - [NFT Wrapping](architecture/nft-wrapping.md)
 
 # Contract Reference
