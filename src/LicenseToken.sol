@@ -274,17 +274,15 @@ contract LicenseToken is
             bool expiredStatus
         )
     {
-        License memory license = licenses[licenseId];
-        return (
-            license.ipAssetId,
-            license.supply,
-            license.expiryTime,
-            license.terms,
-            license.paymentInterval,
-            license.isExclusive,
-            license.isRevoked,
-            _isExpired[licenseId]
-        );
+        License storage license = licenses[licenseId];
+        ipAssetId = license.ipAssetId;
+        supply = license.supply;
+        expiryTime = license.expiryTime;
+        terms = license.terms;
+        paymentInterval = license.paymentInterval;
+        isExclusive = license.isExclusive;
+        revokedStatus = license.isRevoked;
+        expiredStatus = _isExpired[licenseId];
     }
 
     function isActiveLicense(uint256 licenseId) external view returns (bool) {
