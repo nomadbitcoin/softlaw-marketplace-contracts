@@ -1,5 +1,5 @@
 # IRevenueDistributor
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/interfaces/IRevenueDistributor.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/780633a2de81ce811954fe06eaece193fa652c84/src/interfaces/IRevenueDistributor.sol)
 
 Interface for simple revenue distribution to configured recipients
 
@@ -34,11 +34,9 @@ Distributes a payment according to configured splits
 
 *Deducts platform fee then splits remainder among recipients*
 
-*Auto-detects primary vs secondary sale based on seller presence in split recipients*
-
 
 ```solidity
-function distributePayment(uint256 ipAssetId, uint256 amount, address seller) external payable;
+function distributePayment(uint256 ipAssetId, uint256 amount, address seller, bool isPrimarySale) external payable;
 ```
 **Parameters**
 
@@ -46,7 +44,8 @@ function distributePayment(uint256 ipAssetId, uint256 amount, address seller) ex
 |----|----|-----------|
 |`ipAssetId`|`uint256`|The IP asset ID|
 |`amount`|`uint256`|Payment amount to distribute|
-|`seller`|`address`|Address of the seller (used for auto-detection)|
+|`seller`|`address`|Address of the seller (receives remainder for secondary sales)|
+|`isPrimarySale`|`bool`|True for primary sales (100% to split), false for secondary (royalty to split, remainder to seller)|
 
 
 ### withdraw

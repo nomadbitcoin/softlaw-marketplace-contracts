@@ -1,8 +1,8 @@
 # IPAsset
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/IPAsset.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/780633a2de81ce811954fe06eaece193fa652c84/src/IPAsset.sol)
 
 **Inherits:**
-Initializable, ERC721Upgradeable, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable, [IIPAsset](/src/interfaces/IIPAsset.sol/interface.IIPAsset.md)
+Initializable, ERC721Upgradeable, AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable, [IIPAsset](/src/interfaces/IIPAsset.sol/interface.IIPAsset.md)
 
 
 ## State Variables
@@ -76,6 +76,20 @@ mapping(uint256 => string) private _privateMetadata;
 ```
 
 
+### _wrappedNFTs
+
+```solidity
+mapping(uint256 => IIPAsset.WrappedNFT) private _wrappedNFTs;
+```
+
+
+### _nftToIPAsset
+
+```solidity
+mapping(address => mapping(uint256 => uint256)) private _nftToIPAsset;
+```
+
+
 ## Functions
 ### constructor
 
@@ -98,6 +112,24 @@ function initialize(string memory name, string memory symbol, address admin, add
 
 ```solidity
 function mintIP(address to, string memory metadataURI) external whenNotPaused returns (uint256);
+```
+
+### wrapNFT
+
+
+```solidity
+function wrapNFT(address nftContract, uint256 nftTokenId, string memory metadataURI)
+    external
+    whenNotPaused
+    nonReentrant
+    returns (uint256 ipTokenId);
+```
+
+### unwrapNFT
+
+
+```solidity
+function unwrapNFT(uint256 tokenId) external whenNotPaused nonReentrant;
 ```
 
 ### mintLicense
@@ -222,6 +254,27 @@ function pause() external onlyRole(DEFAULT_ADMIN_ROLE);
 
 ```solidity
 function unpause() external onlyRole(DEFAULT_ADMIN_ROLE);
+```
+
+### isWrapped
+
+
+```solidity
+function isWrapped(uint256 tokenId) external view returns (bool);
+```
+
+### getWrappedNFT
+
+
+```solidity
+function getWrappedNFT(uint256 tokenId) external view returns (address nftContract, uint256 nftTokenId);
+```
+
+### onERC721Received
+
+
+```solidity
+function onERC721Received(address, address, uint256, bytes memory) external pure returns (bytes4);
 ```
 
 ### supportsInterface

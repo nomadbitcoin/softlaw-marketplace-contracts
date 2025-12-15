@@ -67,12 +67,13 @@ graph TB
 **Purpose**: Represents intellectual property ownership
 
 **Key Functions:**
-- Mints IP assets as NFTs
+- Mints IP assets as NFTs (native or wrapped)
+- **Wraps external NFTs** into IPAsset for licensing (custodial)
 - Creates licenses by delegating to LicenseToken
 - Tracks active license count for burn protection
 - Receives dispute status updates from GovernanceArbitrator
 
-**Flow**: Users start here by minting IP assets, then create licenses to sell.
+**Flow**: Users mint native IP assets or wrap existing NFTs, then create licenses to sell.
 
 ### 2. LicenseToken (ERC-1155) - License Management
 **Purpose**: Semi-fungible license tokens

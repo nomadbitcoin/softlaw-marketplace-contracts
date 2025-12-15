@@ -1,5 +1,5 @@
 # IIPAsset
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/interfaces/IIPAsset.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/780633a2de81ce811954fe06eaece193fa652c84/src/interfaces/IIPAsset.sol)
 
 Interface for IP Asset NFT contract representing intellectual property ownership
 
@@ -339,6 +339,96 @@ function getPrivateMetadata(uint256 tokenId) external view returns (string memor
 |`<none>`|`string`|metadata The private metadata URI|
 
 
+### wrapNFT
+
+Wraps an external NFT into an IPAsset
+
+*Transfers the NFT to this contract and mints a new IPAsset token representing it.
+Only the NFT owner can wrap it. One NFT can only be wrapped once.
+Use setPrivateMetadata() after wrapping to add private metadata if needed.*
+
+
+```solidity
+function wrapNFT(address nftContract, uint256 nftTokenId, string memory metadataURI)
+    external
+    returns (uint256 ipTokenId);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`nftContract`|`address`|The address of the ERC721 contract|
+|`nftTokenId`|`uint256`|The token ID of the NFT to wrap|
+|`metadataURI`|`string`|The metadata URI for the new IPAsset|
+
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`ipTokenId`|`uint256`|The ID of the newly minted IPAsset token|
+
+
+### unwrapNFT
+
+Unwraps an IPAsset to retrieve the original NFT
+
+*Burns the IPAsset token and returns the original NFT to the caller.
+Only the IPAsset owner can unwrap. Cannot unwrap if active licenses or disputes exist.*
+
+
+```solidity
+function unwrapNFT(uint256 tokenId) external;
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`tokenId`|`uint256`|The IPAsset token ID to unwrap|
+
+
+### isWrapped
+
+Checks if an IPAsset is wrapping an external NFT
+
+
+```solidity
+function isWrapped(uint256 tokenId) external view returns (bool);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`tokenId`|`uint256`|The IPAsset token ID|
+
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`<none>`|`bool`|True if the IPAsset wraps an NFT, false if it's a native IPAsset|
+
+
+### getWrappedNFT
+
+Gets the wrapped NFT details for an IPAsset
+
+
+```solidity
+function getWrappedNFT(uint256 tokenId) external view returns (address nftContract, uint256 nftTokenId);
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`tokenId`|`uint256`|The IPAsset token ID|
+
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`nftContract`|`address`|The wrapped NFT contract address (zero address if not wrapped)|
+|`nftTokenId`|`uint256`|The wrapped NFT token ID (zero if not wrapped)|
+
+
 ## Events
 ### IPMinted
 Emitted when a new IP asset is minted
@@ -518,6 +608,40 @@ event PrivateMetadataUpdated(uint256 indexed tokenId);
 |----|----|-----------|
 |`tokenId`|`uint256`|The ID of the IP asset|
 
+### NFTWrapped
+Emitted when an NFT is wrapped into an IPAsset
+
+
+```solidity
+event NFTWrapped(uint256 indexed ipTokenId, address indexed nftContract, uint256 indexed nftTokenId, address wrapper);
+```
+
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`ipTokenId`|`uint256`|The newly created IPAsset ID|
+|`nftContract`|`address`|The wrapped NFT contract address|
+|`nftTokenId`|`uint256`|The wrapped NFT token ID|
+|`wrapper`|`address`|The address that wrapped the NFT|
+
+### NFTUnwrapped
+Emitted when an IPAsset is unwrapped to retrieve the original NFT
+
+
+```solidity
+event NFTUnwrapped(uint256 indexed ipTokenId, address indexed nftContract, uint256 indexed nftTokenId, address owner);
+```
+
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`ipTokenId`|`uint256`|The burned IPAsset ID|
+|`nftContract`|`address`|The returned NFT contract address|
+|`nftTokenId`|`uint256`|The returned NFT token ID|
+|`owner`|`address`|The address that received the NFT|
+
 ## Errors
 ### InvalidAddress
 Thrown when attempting to mint to zero address
@@ -601,4 +725,61 @@ error LicenseCountUnderflow(uint256 tokenId, uint256 current, uint256 attempted)
 |`tokenId`|`uint256`|The IP asset token ID|
 |`current`|`uint256`|Current license count|
 |`attempted`|`uint256`|Amount attempting to decrement|
+
+### NotWrappedNFT
+Thrown when attempting to unwrap a non-wrapped IPAsset
+
+
+```solidity
+error NotWrappedNFT();
+```
+
+### NFTAlreadyWrapped
+Thrown when attempting to wrap an NFT that's already wrapped
+
+
+```solidity
+error NFTAlreadyWrapped(uint256 existingIPAssetId);
+```
+
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`existingIPAssetId`|`uint256`|The IPAsset that already wraps this NFT|
+
+### NFTNotOwned
+Thrown when caller doesn't own the NFT being wrapped
+
+
+```solidity
+error NFTNotOwned(address nftContract, uint256 nftTokenId, address caller);
+```
+
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`nftContract`|`address`|The NFT contract address|
+|`nftTokenId`|`uint256`|The NFT token ID|
+|`caller`|`address`|The address attempting to wrap|
+
+## Structs
+### WrappedNFT
+Represents a wrapped NFT within an IPAsset
+
+
+```solidity
+struct WrappedNFT {
+    address nftContract;
+    uint256 nftTokenId;
+}
+```
+
+**Properties**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`nftContract`|`address`|The address of the wrapped ERC721 contract|
+|`nftTokenId`|`uint256`|The token ID of the wrapped NFT|
 

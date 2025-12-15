@@ -1,5 +1,5 @@
 # ILicenseToken
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/interfaces/ILicenseToken.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/780633a2de81ce811954fe06eaece193fa652c84/src/interfaces/ILicenseToken.sol)
 
 Interface for License Token contract (ERC-1155 semi-fungible tokens)
 
@@ -544,6 +544,22 @@ function getMaxMissedPayments(uint256 licenseId) external view returns (uint8 ma
 |`maxMissed`|`uint8`|Maximum number of missed payments before auto-revocation|
 
 
+### setPenaltyRate
+
+Sets the penalty rate for a specific license
+
+
+```solidity
+function setPenaltyRate(uint256 licenseId, uint16 penaltyRateBPS) external;
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`licenseId`|`uint256`|The license ID|
+|`penaltyRateBPS`|`uint16`|Penalty rate in basis points (100 bps = 1% per month)|
+
+
 ### getPenaltyRate
 
 Gets the penalty rate for a license
@@ -633,6 +649,21 @@ event AutoRevoked(uint256 indexed licenseId, uint256 missedPayments);
 |----|----|-----------|
 |`licenseId`|`uint256`|The license that was auto-revoked|
 |`missedPayments`|`uint256`|Number of missed payments that triggered revocation|
+
+### PenaltyRateUpdated
+Emitted when a license's penalty rate is updated
+
+
+```solidity
+event PenaltyRateUpdated(uint256 indexed licenseId, uint16 penaltyRateBPS);
+```
+
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`licenseId`|`uint256`|The license ID|
+|`penaltyRateBPS`|`uint16`|The new penalty rate in basis points|
 
 ### PrivateAccessGranted
 Emitted when private metadata access is granted
@@ -773,6 +804,14 @@ Thrown when non-license owner attempts owner-only operation
 
 ```solidity
 error NotLicenseOwner();
+```
+
+### NotIPOwner
+Thrown when non-IP owner attempts IP-owner-only operation
+
+
+```solidity
+error NotIPOwner();
 ```
 
 ### InsufficientMissedPayments

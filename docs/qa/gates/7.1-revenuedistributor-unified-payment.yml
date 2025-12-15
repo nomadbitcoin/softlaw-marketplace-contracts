@@ -1,8 +1,0 @@
-schema: 1
-story: '7.1'
-gate: PASS
-status_reason: 'All acceptance criteria met with excellent test coverage and clean implementation of auto-detection logic.'
-reviewer: 'Biruleib3 (SE Agent)'
-updated: '2025-12-10T17:30:00Z'
-top_issues: []
-waiver: { active: false }

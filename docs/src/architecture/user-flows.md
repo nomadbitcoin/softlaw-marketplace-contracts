@@ -2,7 +2,9 @@
 
 Key user journeys through the Softlaw Marketplace system.
 
-## Creating and Licensing IP
+## Creating IP Assets
+
+### Native IP Creation
 
 ```mermaid
 sequenceDiagram
@@ -25,6 +27,55 @@ sequenceDiagram
     LT->>IP: updateActiveLicenseCount(tokenId, +1)
     LT-->>IP: licenseId
     IP-->>Owner: licenseId
+```
+
+### Wrapping External NFTs
+
+```mermaid
+sequenceDiagram
+    actor Owner as NFT Owner
+    participant NFT as External NFT
+    participant IP as IPAsset
+    participant LT as LicenseToken
+
+    Note over Owner,NFT: Owner has existing NFT<br/>(e.g., Bored Ape, CryptoPunk)
+
+    Owner->>NFT: approve(IPAsset, tokenId)
+    Owner->>IP: wrapNFT(nftContract, nftTokenId, metadata)
+    IP->>NFT: ownerOf(nftTokenId)
+    NFT-->>IP: owner address
+    IP->>IP: Check not already wrapped
+    IP->>IP: Mint IPAsset token
+    IP->>NFT: safeTransferFrom(owner, IPAsset, nftTokenId)
+    NFT->>NFT: Transfer NFT to IPAsset (custody)
+    IP-->>Owner: ipTokenId
+
+    Note over Owner,IP: NFT locked in IPAsset contract<br/>Owner controls via IPAsset token
+
+    Owner->>IP: mintLicense(ipTokenId, licensee, params)
+    IP->>LT: mintLicense(...)
+    LT-->>IP: licenseId
+```
+
+### Unwrapping NFTs
+
+```mermaid
+sequenceDiagram
+    actor Owner as IPAsset Owner
+    participant IP as IPAsset
+    participant NFT as External NFT
+
+    Note over Owner,IP: Owner wants original NFT back
+
+    Owner->>IP: unwrapNFT(ipTokenId)
+    IP->>IP: Check owner
+    IP->>IP: Check no active licenses
+    IP->>IP: Check no active disputes
+    IP->>IP: Burn IPAsset token
+    IP->>NFT: safeTransferFrom(IPAsset, owner, nftTokenId)
+    NFT-->>Owner: Original NFT returned
+
+    Note over Owner,NFT: Cannot unwrap if licenses/disputes exist
 ```
 
 ## Buying a Listed License

@@ -1,5 +1,5 @@
 # GovernanceArbitrator
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/GovernanceArbitrator.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/780633a2de81ce811954fe06eaece193fa652c84/src/GovernanceArbitrator.sol)
 
 **Inherits:**
 [IGovernanceArbitrator](/src/interfaces/IGovernanceArbitrator.sol/interface.IGovernanceArbitrator.md), Initializable, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable

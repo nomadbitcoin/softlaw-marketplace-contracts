@@ -1,5 +1,5 @@
 # IMarketplace
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/interfaces/IMarketplace.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/780633a2de81ce811954fe06eaece193fa652c84/src/interfaces/IMarketplace.sol)
 
 Interface for NFT marketplace with listings and offers
 
@@ -552,6 +552,14 @@ Thrown when native token transfer fails
 
 ```solidity
 error TransferFailed();
+```
+
+### PaymentNotDueYet
+Thrown when attempting to make a payment before it is due
+
+
+```solidity
+error PaymentNotDueYet();
 ```
 
 ## Structs

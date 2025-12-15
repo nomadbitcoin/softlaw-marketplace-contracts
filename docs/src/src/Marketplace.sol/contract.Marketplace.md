@@ -1,5 +1,5 @@
 # Marketplace
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/Marketplace.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/780633a2de81ce811954fe06eaece193fa652c84/src/Marketplace.sol)
 
 **Inherits:**
 [IMarketplace](/src/interfaces/IMarketplace.sol/interface.IMarketplace.md), Initializable, UUPSUpgradeable, AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable
@@ -24,13 +24,6 @@ uint256 public constant BASIS_POINTS = 10_000;
 
 ```solidity
 uint256 public constant SECONDS_PER_MONTH = 2_592_000;
-```
-
-
-### MAX_MISSED_PAYMENTS
-
-```solidity
-uint256 public constant MAX_MISSED_PAYMENTS = 3;
 ```
 
 
@@ -66,6 +59,20 @@ mapping(bytes32 => uint256) public escrow;
 
 ```solidity
 mapping(uint256 => RecurringPayment) public recurring;
+```
+
+
+### _ipAssetSold
+
+```solidity
+mapping(uint256 => bool) private _ipAssetSold;
+```
+
+
+### _licenseSold
+
+```solidity
+mapping(bytes32 => bool) private _licenseSold;
 ```
 
 
@@ -151,7 +158,7 @@ function _transferNFT(address nftContract, address from, address to, uint256 tok
 
 
 ```solidity
-function _distributePayment(uint256 ipAssetId, uint256 totalAmount, address seller) internal;
+function _distributePayment(uint256 ipAssetId, uint256 totalAmount, address seller, bool isPrimarySale) internal;
 ```
 
 ### cancelOffer

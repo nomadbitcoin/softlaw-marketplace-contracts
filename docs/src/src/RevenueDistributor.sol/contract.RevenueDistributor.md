@@ -1,5 +1,5 @@
 # RevenueDistributor
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/RevenueDistributor.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/780633a2de81ce811954fe06eaece193fa652c84/src/RevenueDistributor.sol)
 
 **Inherits:**
 [IRevenueDistributor](/src/interfaces/IRevenueDistributor.sol/interface.IRevenueDistributor.md), ReentrancyGuard, AccessControl, IERC2981
@@ -55,6 +55,13 @@ mapping(uint256 => uint256) public assetRoyaltyBasisPoints;
 ```
 
 
+### _hasCustomRoyalty
+
+```solidity
+mapping(uint256 => bool) private _hasCustomRoyalty;
+```
+
+
 ### CONFIGURATOR_ROLE
 Role for configuring revenue splits
 
@@ -99,7 +106,10 @@ function configureSplit(uint256 ipAssetId, address[] memory recipients, uint256[
 
 
 ```solidity
-function distributePayment(uint256 ipAssetId, uint256 amount, address seller) external payable nonReentrant;
+function distributePayment(uint256 ipAssetId, uint256 amount, address seller, bool isPrimarySale)
+    external
+    payable
+    nonReentrant;
 ```
 
 ### withdraw

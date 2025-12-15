@@ -1,5 +1,5 @@
 # LicenseToken
-[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/95a2b524a76f219f6ef11d45ce10720548eae569/src/LicenseToken.sol)
+[Git Source](https://github.com/your-org/softlaw-marketplace-contracts/blob/780633a2de81ce811954fe06eaece193fa652c84/src/LicenseToken.sol)
 
 **Inherits:**
 [ILicenseToken](/src/interfaces/ILicenseToken.sol/interface.ILicenseToken.md), Initializable, ERC1155Upgradeable, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable
@@ -302,6 +302,13 @@ function isActiveLicense(uint256 licenseId) external view returns (bool);
 
 ```solidity
 function getMaxMissedPayments(uint256 licenseId) external view returns (uint8);
+```
+
+### setPenaltyRate
+
+
+```solidity
+function setPenaltyRate(uint256 licenseId, uint16 penaltyRateBPS) external whenNotPaused;
 ```
 
 ### getPenaltyRate
