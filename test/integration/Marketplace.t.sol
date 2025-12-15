@@ -1148,10 +1148,10 @@ contract MarketplaceTest is Test {
         // Warp to 30 days + 4.5 days late (36 hours after grace period ends)
         vm.warp(block.timestamp + 30 days + 3 days + 36 hours);
 
-        // Formula uses days (truncates partial days): 36 hours / 86400 = 1 day
-        // penalty = (baseAmount * monthlyRateBPS * daysLate) / (10000 * 30)
-        uint256 daysLate = 1; // 36 hours truncates to 1 full day
-        uint256 expectedPenalty = (1 ether * 500 * daysLate) / (10000 * 30);
+        // Formula uses pro-rata seconds: penalty = (baseAmount * monthlyRateBPS * secondsOverdue) / (10000 * 30 days)
+        // 36 hours = 129,600 seconds
+        uint256 secondsOverdue = 36 hours;
+        uint256 expectedPenalty = (1 ether * 500 * secondsOverdue) / (10000 * 30 days);
 
         uint256 actualPenalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
         assertEq(actualPenalty, expectedPenalty);
@@ -1197,15 +1197,14 @@ contract MarketplaceTest is Test {
         uint256 timeAfterGrace = 3 days + 7 hours + 23 minutes + 47 seconds;
         vm.warp(block.timestamp + 30 days + 3 days + timeAfterGrace);
 
-        // Formula uses days (truncates to full days)
-        // 3 days + 7h23m47s = 3 full days
-        uint256 daysLate = 3;
-        uint256 expectedPenalty = (1 ether * 500 * daysLate) / (10000 * 30);
+        // Formula uses pro-rata seconds: penalty = (baseAmount * monthlyRateBPS * secondsOverdue) / (10000 * 30 days)
+        uint256 secondsOverdue = timeAfterGrace;
+        uint256 expectedPenalty = (1 ether * 500 * secondsOverdue) / (10000 * 30 days);
 
         uint256 actualPenalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
         assertEq(actualPenalty, expectedPenalty);
 
-        // Verify the day-based calculation
+        // Verify the second-based pro-rata calculation
         (uint256 baseAmount, uint256 penalty, uint256 total) = marketplace.getTotalPaymentDue(address(licenseToken), recurringLicenseId);
         assertEq(baseAmount, 1 ether);
         assertEq(penalty, expectedPenalty);
@@ -1247,15 +1246,15 @@ contract MarketplaceTest is Test {
         // Just 1 hour late after grace period (3 days + 1 hour)
         vm.warp(block.timestamp + 30 days + 3 days + 1 hours);
 
-        // Formula uses days: 1 hour / 86400 seconds = 0 days (truncated)
-        uint256 daysLate = 0;
-        uint256 expectedPenalty = (1 ether * 500 * daysLate) / (10000 * 30);
+        // Formula uses pro-rata seconds: penalty = (baseAmount * monthlyRateBPS * secondsOverdue) / (10000 * 30 days)
+        uint256 secondsOverdue = 1 hours;
+        uint256 expectedPenalty = (1 ether * 500 * secondsOverdue) / (10000 * 30 days);
 
         uint256 actualPenalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
         assertEq(actualPenalty, expectedPenalty);
 
-        // With day-based calculation, sub-day delays have 0 penalty
-        assertEq(actualPenalty, 0);
+        // With second-based calculation, even 1 hour incurs a small penalty
+        assertGt(actualPenalty, 0);
 
         (,, uint256 total) = marketplace.getTotalPaymentDue(address(licenseToken), recurringLicenseId);
 
@@ -1296,15 +1295,15 @@ contract MarketplaceTest is Test {
         uint256 arbitraryOverdue = 12345;
         vm.warp(block.timestamp + 30 days + 3 days + arbitraryOverdue);
 
-        // Formula uses days: 12345 seconds / 86400 = 0 days (truncated)
-        uint256 daysLate = 0;
-        uint256 expectedPenalty = (1 ether * 500 * daysLate) / (10000 * 30);
+        // Formula uses pro-rata seconds: penalty = (baseAmount * monthlyRateBPS * secondsOverdue) / (10000 * 30 days)
+        uint256 secondsOverdue = arbitraryOverdue;
+        uint256 expectedPenalty = (1 ether * 500 * secondsOverdue) / (10000 * 30 days);
 
         uint256 actualPenalty = marketplace.calculatePenalty(address(licenseToken), recurringLicenseId);
         assertEq(actualPenalty, expectedPenalty);
 
-        // With day-based calculation, sub-day delays have 0 penalty
-        assertEq(actualPenalty, 0);
+        // With second-based calculation, arbitrary seconds incur proportional penalty
+        assertGt(actualPenalty, 0);
 
         (,, uint256 total) = marketplace.getTotalPaymentDue(address(licenseToken), recurringLicenseId);
 
@@ -1427,21 +1426,51 @@ contract MarketplaceTest is Test {
         vm.prank(seller);
         bytes32 listingId = marketplace.createListing(address(ipAsset), ipTokenId, 1 ether, true);
 
-        (address sellerBefore, address nftBefore, uint256 tokenIdBefore, uint256 priceBefore, bool activeBefore, bool isERC721Before) = marketplace.listings(listingId);
+        address sellerBefore;
+        address nftBefore;
+        uint256 tokenIdBefore;
+
+        {
+            (sellerBefore, nftBefore, tokenIdBefore, , , ) = marketplace.listings(listingId);
+        }
+
+        uint256 priceBefore;
+        bool activeBefore;
+        bool isERC721Before;
+
+        {
+            (, , , priceBefore, activeBefore, isERC721Before) = marketplace.listings(listingId);
+        }
 
         MarketplaceV2 newImpl = new MarketplaceV2();
         vm.prank(admin);
         marketplace.upgradeToAndCall(address(newImpl), "");
 
         MarketplaceV2 marketplaceV2 = MarketplaceV2(address(marketplace));
-        (address sellerAfter, address nftAfter, uint256 tokenIdAfter, uint256 priceAfter, bool activeAfter, bool isERC721After) = marketplaceV2.listings(listingId);
 
-        assertEq(sellerBefore, sellerAfter);
-        assertEq(nftBefore, nftAfter);
-        assertEq(tokenIdBefore, tokenIdAfter);
-        assertEq(priceBefore, priceAfter);
-        assertEq(activeBefore, activeAfter);
-        assertEq(isERC721Before, isERC721After);
+        {
+            address sellerAfter;
+            address nftAfter;
+            uint256 tokenIdAfter;
+
+            (sellerAfter, nftAfter, tokenIdAfter, , , ) = marketplaceV2.listings(listingId);
+
+            assertEq(sellerBefore, sellerAfter);
+            assertEq(nftBefore, nftAfter);
+            assertEq(tokenIdBefore, tokenIdAfter);
+        }
+
+        {
+            uint256 priceAfter;
+            bool activeAfter;
+            bool isERC721After;
+
+            (, , , priceAfter, activeAfter, isERC721After) = marketplaceV2.listings(listingId);
+
+            assertEq(priceBefore, priceAfter);
+            assertEq(activeBefore, activeAfter);
+            assertEq(isERC721Before, isERC721After);
+        }
     }
 
     function testUpgradePreservesOffers() public {
@@ -1452,24 +1481,56 @@ contract MarketplaceTest is Test {
             block.timestamp + 7 days
         );
 
-        (address buyerBefore, address nftBefore, uint256 tokenIdBefore, uint256 priceBefore, bool activeBefore, uint256 expiryBefore) = marketplace.offers(offerId);
-        uint256 escrowBefore = marketplace.escrow(offerId);
+        address buyerBefore;
+        address nftBefore;
+        uint256 tokenIdBefore;
+
+        {
+            (buyerBefore, nftBefore, tokenIdBefore, , , ) = marketplace.offers(offerId);
+        }
+
+        uint256 priceBefore;
+        bool activeBefore;
+        uint256 expiryBefore;
+        uint256 escrowBefore;
+
+        {
+            (, , , priceBefore, activeBefore, expiryBefore) = marketplace.offers(offerId);
+            escrowBefore = marketplace.escrow(offerId);
+        }
 
         MarketplaceV2 newImpl = new MarketplaceV2();
         vm.prank(admin);
         marketplace.upgradeToAndCall(address(newImpl), "");
 
         MarketplaceV2 marketplaceV2 = MarketplaceV2(address(marketplace));
-        (address buyerAfter, address nftAfter, uint256 tokenIdAfter, uint256 priceAfter, bool activeAfter, uint256 expiryAfter) = marketplaceV2.offers(offerId);
-        uint256 escrowAfter = marketplaceV2.escrow(offerId);
 
-        assertEq(buyerBefore, buyerAfter);
-        assertEq(nftBefore, nftAfter);
-        assertEq(tokenIdBefore, tokenIdAfter);
-        assertEq(priceBefore, priceAfter);
-        assertEq(activeBefore, activeAfter);
-        assertEq(expiryBefore, expiryAfter);
-        assertEq(escrowBefore, escrowAfter);
+        {
+            address buyerAfter;
+            address nftAfter;
+            uint256 tokenIdAfter;
+
+            (buyerAfter, nftAfter, tokenIdAfter, , , ) = marketplaceV2.offers(offerId);
+
+            assertEq(buyerBefore, buyerAfter);
+            assertEq(nftBefore, nftAfter);
+            assertEq(tokenIdBefore, tokenIdAfter);
+        }
+
+        {
+            uint256 priceAfter;
+            bool activeAfter;
+            uint256 expiryAfter;
+            uint256 escrowAfter;
+
+            (, , , priceAfter, activeAfter, expiryAfter) = marketplaceV2.offers(offerId);
+            escrowAfter = marketplaceV2.escrow(offerId);
+
+            assertEq(priceBefore, priceAfter);
+            assertEq(activeBefore, activeAfter);
+            assertEq(expiryBefore, expiryAfter);
+            assertEq(escrowBefore, escrowAfter);
+        }
     }
 
     function testUpgradePreservesRecurringPayments() public {
@@ -2256,73 +2317,79 @@ contract MarketplaceTest is Test {
     }
 
     function testMultipleRecipientsReceiveRoyalty() public {
-        // Setup: IP Asset with 3 creators (40%, 35%, 25% split)
         address creator1 = address(100);
         address creator2 = address(101);
         address creator3 = address(102);
+        uint256 newIpTokenId;
 
-        vm.prank(creator1);
-        uint256 newIpTokenId = ipAsset.mintIP(creator1, "ipfs://metadata");
+        // Setup and primary sale
+        {
+            vm.prank(creator1);
+            newIpTokenId = ipAsset.mintIP(creator1, "ipfs://metadata");
 
-        address[] memory recipients = new address[](3);
-        recipients[0] = creator1;
-        recipients[1] = creator2;
-        recipients[2] = creator3;
-        uint256[] memory shares = new uint256[](3);
-        shares[0] = 4000; // 40%
-        shares[1] = 3500; // 35%
-        shares[2] = 2500; // 25%
+            address[] memory recipients = new address[](3);
+            recipients[0] = creator1;
+            recipients[1] = creator2;
+            recipients[2] = creator3;
+            uint256[] memory shares = new uint256[](3);
+            shares[0] = 4000; // 40%
+            shares[1] = 3500; // 35%
+            shares[2] = 2500; // 25%
 
-        vm.prank(admin);
-        revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
+            vm.prank(admin);
+            revenueDistributor.configureSplit(newIpTokenId, recipients, shares);
 
-        vm.prank(admin);
-        revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
+            vm.prank(admin);
+            revenueDistributor.setAssetRoyalty(newIpTokenId, 1000); // 10%
 
-        // Primary sale: creator1 sells to buyer
-        vm.prank(creator1);
-        ipAsset.approve(address(marketplace), newIpTokenId);
+            vm.prank(creator1);
+            ipAsset.approve(address(marketplace), newIpTokenId);
 
-        vm.prank(creator1);
-        bytes32 listing1 = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
+            vm.prank(creator1);
+            bytes32 listing1 = marketplace.createListing(address(ipAsset), newIpTokenId, 100 ether, true);
 
-        vm.deal(buyer, 100 ether);
-        vm.prank(buyer);
-        marketplace.buyListing{value: 100 ether}(listing1);
+            vm.deal(buyer, 100 ether);
+            vm.prank(buyer);
+            marketplace.buyListing{value: 100 ether}(listing1);
+        }
 
-        // Secondary sale: buyer lists for resale
-        vm.prank(buyer);
-        ipAsset.approve(address(marketplace), newIpTokenId);
+        uint256 creator1BalanceBefore;
+        uint256 creator2BalanceBefore;
+        uint256 creator3BalanceBefore;
 
-        vm.prank(buyer);
-        bytes32 listing2 = marketplace.createListing(address(ipAsset), newIpTokenId, 200 ether, true);
+        // Secondary sale
+        {
+            vm.prank(buyer);
+            ipAsset.approve(address(marketplace), newIpTokenId);
 
-        uint256 creator1BalanceBefore = revenueDistributor.getBalance(creator1);
-        uint256 creator2BalanceBefore = revenueDistributor.getBalance(creator2);
-        uint256 creator3BalanceBefore = revenueDistributor.getBalance(creator3);
+            vm.prank(buyer);
+            bytes32 listing2 = marketplace.createListing(address(ipAsset), newIpTokenId, 200 ether, true);
 
-        // other buys from buyer (secondary sale)
-        vm.deal(other, 200 ether);
-        vm.prank(other);
-        marketplace.buyListing{value: 200 ether}(listing2);
+            creator1BalanceBefore = revenueDistributor.getBalance(creator1);
+            creator2BalanceBefore = revenueDistributor.getBalance(creator2);
+            creator3BalanceBefore = revenueDistributor.getBalance(creator3);
 
-        // Calculate expected amounts
-        uint256 platformFee = (200 ether * 250) / 10000; // 2.5%
-        uint256 remaining = 200 ether - platformFee;
-        uint256 totalRoyalty = (200 ether * 1000) / 10000; // 10% of full sale price
+            vm.deal(other, 200 ether);
+            vm.prank(other);
+            marketplace.buyListing{value: 200 ether}(listing2);
+        }
 
-        uint256 creator1Royalty = (totalRoyalty * 4000) / 10000; // 40%
-        uint256 creator2Royalty = (totalRoyalty * 3500) / 10000; // 35%
-        uint256 creator3Royalty = (totalRoyalty * 2500) / 10000; // 25%
+        // Verify royalty distribution
+        {
+            uint256 totalRoyalty = (200 ether * 1000) / 10000; // 10% of full sale price
 
-        // Verify each creator received correct royalty share
-        uint256 creator1BalanceAfter = revenueDistributor.getBalance(creator1);
-        uint256 creator2BalanceAfter = revenueDistributor.getBalance(creator2);
-        uint256 creator3BalanceAfter = revenueDistributor.getBalance(creator3);
+            uint256 creator1Royalty = (totalRoyalty * 4000) / 10000; // 40%
+            uint256 creator2Royalty = (totalRoyalty * 3500) / 10000; // 35%
+            uint256 creator3Royalty = (totalRoyalty * 2500) / 10000; // 25%
 
-        assertEq(creator1BalanceAfter - creator1BalanceBefore, creator1Royalty, "Creator1 should receive 40% of royalty");
-        assertEq(creator2BalanceAfter - creator2BalanceBefore, creator2Royalty, "Creator2 should receive 35% of royalty");
-        assertEq(creator3BalanceAfter - creator3BalanceBefore, creator3Royalty, "Creator3 should receive 25% of royalty");
+            uint256 creator1BalanceAfter = revenueDistributor.getBalance(creator1);
+            uint256 creator2BalanceAfter = revenueDistributor.getBalance(creator2);
+            uint256 creator3BalanceAfter = revenueDistributor.getBalance(creator3);
+
+            assertEq(creator1BalanceAfter - creator1BalanceBefore, creator1Royalty, "Creator1 should receive 40% of royalty");
+            assertEq(creator2BalanceAfter - creator2BalanceBefore, creator2Royalty, "Creator2 should receive 35% of royalty");
+            assertEq(creator3BalanceAfter - creator3BalanceBefore, creator3Royalty, "Creator3 should receive 25% of royalty");
+        }
     }
 
     function testSecondarySaleRoyaltyAmount() public {

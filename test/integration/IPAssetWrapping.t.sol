@@ -258,64 +258,94 @@ contract IPAssetWrappingIntegrationTest is Test {
     // ========== Integration Test 5: Wrapped NFT Secondary Royalties ==========
 
     function testIntegration_WrappedNFTSecondaryRoyalties() public {
+        uint256 ipTokenId;
+
         // Alice wraps NFT
-        vm.startPrank(alice);
-        uint256 nftTokenId = mockNFT.mint(alice);
-        mockNFT.approve(address(ipAsset), nftTokenId);
-        uint256 ipTokenId = ipAsset.wrapNFT(address(mockNFT), nftTokenId, "ipfs://wrapped-metadata");
+        {
+            vm.startPrank(alice);
+            uint256 nftTokenId = mockNFT.mint(alice);
+            mockNFT.approve(address(ipAsset), nftTokenId);
+            ipTokenId = ipAsset.wrapNFT(address(mockNFT), nftTokenId, "ipfs://wrapped-metadata");
 
-        // Set 15% royalty
-        ipAsset.setRoyaltyRate(ipTokenId, 1500);
+            // Set 15% royalty
+            ipAsset.setRoyaltyRate(ipTokenId, 1500);
 
-        // Configure revenue split (Alice 60%, Bob 40%)
-        address[] memory recipients = new address[](2);
-        recipients[0] = alice;
-        recipients[1] = bob;
-        uint256[] memory shares = new uint256[](2);
-        shares[0] = 6000;
-        shares[1] = 4000;
-        ipAsset.configureRevenueSplit(ipTokenId, recipients, shares);
+            // Configure revenue split (Alice 60%, Bob 40%)
+            address[] memory recipients = new address[](2);
+            recipients[0] = alice;
+            recipients[1] = bob;
+            uint256[] memory shares = new uint256[](2);
+            shares[0] = 6000;
+            shares[1] = 4000;
+            ipAsset.configureRevenueSplit(ipTokenId, recipients, shares);
 
-        // Alice lists (primary sale)
-        ipAsset.approve(address(marketplace), ipTokenId);
-        bytes32 listing1 = marketplace.createListing(address(ipAsset), ipTokenId, 10 ether, true);
-        vm.stopPrank();
+            // Alice lists (primary sale)
+            ipAsset.approve(address(marketplace), ipTokenId);
+            bytes32 listing1 = marketplace.createListing(address(ipAsset), ipTokenId, 10 ether, true);
+            vm.stopPrank();
 
-        // Charlie buys (primary sale - no royalty)
-        vm.prank(charlie);
-        marketplace.buyListing{value: 10 ether}(listing1);
+            // Charlie buys (primary sale - no royalty)
+            vm.prank(charlie);
+            marketplace.buyListing{value: 10 ether}(listing1);
+        }
 
         // Charlie lists for resale (secondary sale)
-        vm.startPrank(charlie);
-        ipAsset.approve(address(marketplace), ipTokenId);
-        bytes32 listing2 = marketplace.createListing(address(ipAsset), ipTokenId, 15 ether, true);
-        vm.stopPrank();
+        {
+            vm.startPrank(charlie);
+            ipAsset.approve(address(marketplace), ipTokenId);
+            bytes32 listing2 = marketplace.createListing(address(ipAsset), ipTokenId, 15 ether, true);
+            vm.stopPrank();
 
-        // Dave buys (secondary sale - royalty applies)
-        vm.prank(dave);
-        marketplace.buyListing{value: 15 ether}(listing2);
+            // Dave buys (secondary sale - royalty applies)
+            vm.prank(dave);
+            marketplace.buyListing{value: 15 ether}(listing2);
+        }
 
         // Verify royalty distribution (pull-based system)
         // Primary sale (10 ether): platform 0.25, Alice 5.85, Bob 3.9
         // Secondary sale (15 ether): platform 0.375, royalty 2.25 (on full amount), seller gets remaining minus royalty
+        {
+            uint256 primaryPlatformFee = (10 ether * 250) / 10000; // 0.25 ether
+            uint256 secondaryPlatformFee = (15 ether * 250) / 10000; // 0.375 ether
 
-        uint256 primaryPlatformFee = (10 ether * 250) / 10000; // 0.25 ether
-        uint256 primaryRemaining = 10 ether - primaryPlatformFee; // 9.75 ether
-        uint256 alicePrimarySale = (primaryRemaining * 6000) / 10000; // 5.85 ether
-        uint256 bobPrimarySale = (primaryRemaining * 4000) / 10000; // 3.9 ether
+            assertEq(
+                revenueDistributor.getBalance(treasury),
+                primaryPlatformFee + secondaryPlatformFee
+            );
+        }
 
-        uint256 secondaryPlatformFee = (15 ether * 250) / 10000; // 0.375 ether
-        uint256 secondaryRemaining = 15 ether - secondaryPlatformFee; // 14.625 ether
-        uint256 royaltyAmount = (15 ether * 1500) / 10000; // 2.25 ether (calculated on FULL amount)
-        uint256 aliceRoyalty = (royaltyAmount * 6000) / 10000; // 1.35 ether
-        uint256 bobRoyalty = (royaltyAmount * 4000) / 10000; // 0.9 ether
-        uint256 charlieSellerAmount = secondaryRemaining - royaltyAmount; // 12.375 ether
+        {
+            uint256 primaryRemaining = 10 ether - ((10 ether * 250) / 10000); // 9.75 ether
+            uint256 royaltyAmount = (15 ether * 1500) / 10000; // 2.25 ether
+            uint256 alicePrimarySale = (primaryRemaining * 6000) / 10000; // 5.85 ether
+            uint256 aliceRoyalty = (royaltyAmount * 6000) / 10000; // 1.35 ether
 
-        // Total balances in revenue distributor
-        assertEq(revenueDistributor.getBalance(treasury), primaryPlatformFee + secondaryPlatformFee);
-        assertEq(revenueDistributor.getBalance(alice), alicePrimarySale + aliceRoyalty);
-        assertEq(revenueDistributor.getBalance(bob), bobPrimarySale + bobRoyalty);
-        assertEq(revenueDistributor.getBalance(charlie), charlieSellerAmount);
+            assertEq(
+                revenueDistributor.getBalance(alice),
+                alicePrimarySale + aliceRoyalty
+            );
+        }
+
+        {
+            uint256 primaryRemaining = 10 ether - ((10 ether * 250) / 10000); // 9.75 ether
+            uint256 royaltyAmount = (15 ether * 1500) / 10000; // 2.25 ether
+            uint256 bobPrimarySale = (primaryRemaining * 4000) / 10000; // 3.9 ether
+            uint256 bobRoyalty = (royaltyAmount * 4000) / 10000; // 0.9 ether
+
+            assertEq(
+                revenueDistributor.getBalance(bob),
+                bobPrimarySale + bobRoyalty
+            );
+        }
+
+        {
+            uint256 secondaryRemaining = 15 ether - ((15 ether * 250) / 10000); // 14.625 ether
+            uint256 royaltyAmount = (15 ether * 1500) / 10000; // 2.25 ether
+            uint256 charlieSellerAmount = secondaryRemaining - royaltyAmount; // 12.375 ether
+
+            assertEq(revenueDistributor.getBalance(charlie), charlieSellerAmount);
+        }
+
         assertEq(ipAsset.ownerOf(ipTokenId), dave);
     }
 

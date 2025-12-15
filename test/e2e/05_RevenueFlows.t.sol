@@ -211,53 +211,57 @@ contract RevenueFlowsTest is E2ETestBase {
     // ============ Royalty Rate Configuration Tests ============
 
     function test_E2E_DifferentRoyaltyRatesAcrossIPs() public {
-        // IP1: 5% royalty
-        (address[] memory r1, uint256[] memory s1) = _simpleSplit(alice);
-        uint256 ip1 = _createIPWithSplit(alice, r1, s1);
-        _setRoyaltyRate(ip1, alice, 500);
+        uint256 ip1;
+        uint256 ip2;
+        uint256 ip3;
 
-        // IP2: 10% royalty
-        (address[] memory r2, uint256[] memory s2) = _simpleSplit(bob);
-        uint256 ip2 = _createIPWithSplit(bob, r2, s2);
-        _setRoyaltyRate(ip2, bob, 1000);
+        // Setup IPs with different royalty rates
+        {
+            (address[] memory r1, uint256[] memory s1) = _simpleSplit(alice);
+            ip1 = _createIPWithSplit(alice, r1, s1);
+            _setRoyaltyRate(ip1, alice, 500);
 
-        // IP3: 20% royalty
-        (address[] memory r3, uint256[] memory s3) = _simpleSplit(charlie);
-        uint256 ip3 = _createIPWithSplit(charlie, r3, s3);
-        _setRoyaltyRate(ip3, charlie, 2000);
+            (address[] memory r2, uint256[] memory s2) = _simpleSplit(bob);
+            ip2 = _createIPWithSplit(bob, r2, s2);
+            _setRoyaltyRate(ip2, bob, 1000);
+
+            (address[] memory r3, uint256[] memory s3) = _simpleSplit(charlie);
+            ip3 = _createIPWithSplit(charlie, r3, s3);
+            _setRoyaltyRate(ip3, charlie, 2000);
+        }
 
         // Primary sales
-        bytes32 listing1 = _createListing(alice, address(ipAsset), ip1, 10 ether, true);
-        _buyListing(dave, listing1, 10 ether);
+        {
+            bytes32 listing1 = _createListing(alice, address(ipAsset), ip1, 10 ether, true);
+            _buyListing(dave, listing1, 10 ether);
 
-        bytes32 listing2 = _createListing(bob, address(ipAsset), ip2, 10 ether, true);
-        _buyListing(eve, listing2, 10 ether);
+            bytes32 listing2 = _createListing(bob, address(ipAsset), ip2, 10 ether, true);
+            _buyListing(eve, listing2, 10 ether);
 
-        bytes32 listing3 = _createListing(charlie, address(ipAsset), ip3, 10 ether, true);
-        _buyListing(frank, listing3, 10 ether);
+            bytes32 listing3 = _createListing(charlie, address(ipAsset), ip3, 10 ether, true);
+            _buyListing(frank, listing3, 10 ether);
+        }
 
         uint256 aliceBalanceBefore = revenueDistributor.getBalance(alice);
         uint256 bobBalanceBefore = revenueDistributor.getBalance(bob);
         uint256 charlieBalanceBefore = revenueDistributor.getBalance(charlie);
 
-        // Secondary sales all at 10 ETH
-        bytes32 listing4 = _createListing(dave, address(ipAsset), ip1, 10 ether, true);
-        _buyListing(grace, listing4, 10 ether);
+        // Secondary sales
+        {
+            bytes32 listing4 = _createListing(dave, address(ipAsset), ip1, 10 ether, true);
+            _buyListing(grace, listing4, 10 ether);
 
-        bytes32 listing5 = _createListing(eve, address(ipAsset), ip2, 10 ether, true);
-        _buyListing(henry, listing5, 10 ether);
+            bytes32 listing5 = _createListing(eve, address(ipAsset), ip2, 10 ether, true);
+            _buyListing(henry, listing5, 10 ether);
 
-        bytes32 listing6 = _createListing(frank, address(ipAsset), ip3, 10 ether, true);
-        _buyListing(ivy, listing6, 10 ether);
+            bytes32 listing6 = _createListing(frank, address(ipAsset), ip3, 10 ether, true);
+            _buyListing(ivy, listing6, 10 ether);
+        }
 
         // Verify different royalty amounts
-        uint256 aliceRoyalty = revenueDistributor.getBalance(alice) - aliceBalanceBefore;
-        uint256 bobRoyalty = revenueDistributor.getBalance(bob) - bobBalanceBefore;
-        uint256 charlieRoyalty = revenueDistributor.getBalance(charlie) - charlieBalanceBefore;
-
-        assertEq(aliceRoyalty, _royalty(10 ether, 500)); // 5%
-        assertEq(bobRoyalty, _royalty(10 ether, 1000)); // 10%
-        assertEq(charlieRoyalty, _royalty(10 ether, 2000)); // 20%
+        assertEq(revenueDistributor.getBalance(alice) - aliceBalanceBefore, _royalty(10 ether, 500)); // 5%
+        assertEq(revenueDistributor.getBalance(bob) - bobBalanceBefore, _royalty(10 ether, 1000)); // 10%
+        assertEq(revenueDistributor.getBalance(charlie) - charlieBalanceBefore, _royalty(10 ether, 2000)); // 20%
     }
 
     function test_E2E_RoyaltyRateChangeBetweenSales() public {

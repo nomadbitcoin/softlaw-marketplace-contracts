@@ -27,5 +27,14 @@ jobs:
       - name: Build contracts
         run: forge build
 
-      - name: Run IPAsset contract tests
-        run: forge test --match-path "test/IPAsset.t.sol"
+      - name: Run unit tests
+        run: |
+          forge test --match-path "test/*.t.sol" \
+            --no-match-contract "(MathStressTest|RoleManagementTest)"
+
+      - name: Run integration tests
+        run: |
+          forge test --match-path "test/integration/*.t.sol"
+
+      - name: Run e2e tests
+        run: forge test --match-path "test/e2e/*.t.sol"

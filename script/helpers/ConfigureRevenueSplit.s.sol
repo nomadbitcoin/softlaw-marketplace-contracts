@@ -34,9 +34,9 @@ contract ConfigureRevenueSplit is Script {
         console.log("Token ID:", TOKEN_ID);
         console.log("Recipients:");
         for (uint256 i = 0; i < recipients.length; i++) {
-            console.log("  ", recipients[i], "-", shares[i], "bps");
+            console.log("  Recipient:", recipients[i]);
+            console.log("  Share:", shares[i]);
         }
-        console.log("");
 
         vm.startBroadcast(deployerPrivateKey);
         ipAsset.configureRevenueSplit(TOKEN_ID, recipients, shares);
