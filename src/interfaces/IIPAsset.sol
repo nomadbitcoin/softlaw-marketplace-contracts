@@ -7,6 +7,18 @@ pragma solidity ^0.8.28;
  * @dev ERC-721 upgradeable contract with metadata versioning and license management
  */
 interface IIPAsset {
+    // ==================== STRUCTS ====================
+
+    /**
+     * @notice Represents a wrapped NFT within an IPAsset
+     * @param nftContract The address of the wrapped ERC721 contract
+     * @param nftTokenId The token ID of the wrapped NFT
+     */
+    struct WrappedNFT {
+        address nftContract;
+        uint256 nftTokenId;
+    }
+
     // ==================== EVENTS ====================
 
     /**
@@ -100,6 +112,34 @@ interface IIPAsset {
      */
     event PrivateMetadataUpdated(uint256 indexed tokenId);
 
+    /**
+     * @notice Emitted when an NFT is wrapped into an IPAsset
+     * @param ipTokenId The newly created IPAsset ID
+     * @param nftContract The wrapped NFT contract address
+     * @param nftTokenId The wrapped NFT token ID
+     * @param wrapper The address that wrapped the NFT
+     */
+    event NFTWrapped(
+        uint256 indexed ipTokenId,
+        address indexed nftContract,
+        uint256 indexed nftTokenId,
+        address wrapper
+    );
+
+    /**
+     * @notice Emitted when an IPAsset is unwrapped to retrieve the original NFT
+     * @param ipTokenId The burned IPAsset ID
+     * @param nftContract The returned NFT contract address
+     * @param nftTokenId The returned NFT token ID
+     * @param owner The address that received the NFT
+     */
+    event NFTUnwrapped(
+        uint256 indexed ipTokenId,
+        address indexed nftContract,
+        uint256 indexed nftTokenId,
+        address owner
+    );
+
     // ==================== ERRORS ====================
 
     /// @notice Thrown when attempting to mint to zero address
@@ -137,6 +177,25 @@ interface IIPAsset {
      * @param attempted Amount attempting to decrement
      */
     error LicenseCountUnderflow(uint256 tokenId, uint256 current, uint256 attempted);
+
+    /**
+     * @notice Thrown when attempting to unwrap a non-wrapped IPAsset
+     */
+    error NotWrappedNFT();
+
+    /**
+     * @notice Thrown when attempting to wrap an NFT that's already wrapped
+     * @param existingIPAssetId The IPAsset that already wraps this NFT
+     */
+    error NFTAlreadyWrapped(uint256 existingIPAssetId);
+
+    /**
+     * @notice Thrown when caller doesn't own the NFT being wrapped
+     * @param nftContract The NFT contract address
+     * @param nftTokenId The NFT token ID
+     * @param caller The address attempting to wrap
+     */
+    error NFTNotOwned(address nftContract, uint256 nftTokenId, address caller);
 
     // ==================== FUNCTIONS ====================
 
@@ -301,4 +360,46 @@ interface IIPAsset {
      * @return metadata The private metadata URI
      */
     function getPrivateMetadata(uint256 tokenId) external view returns (string memory);
+
+    /**
+     * @notice Wraps an external NFT into an IPAsset
+     * @dev Transfers the NFT to this contract and mints a new IPAsset token representing it.
+     *      Only the NFT owner can wrap it. One NFT can only be wrapped once.
+     *      Use setPrivateMetadata() after wrapping to add private metadata if needed.
+     * @param nftContract The address of the ERC721 contract
+     * @param nftTokenId The token ID of the NFT to wrap
+     * @param metadataURI The metadata URI for the new IPAsset
+     * @return ipTokenId The ID of the newly minted IPAsset token
+     */
+    function wrapNFT(
+        address nftContract,
+        uint256 nftTokenId,
+        string memory metadataURI
+    ) external returns (uint256 ipTokenId);
+
+    /**
+     * @notice Unwraps an IPAsset to retrieve the original NFT
+     * @dev Burns the IPAsset token and returns the original NFT to the caller.
+     *      Only the IPAsset owner can unwrap. Cannot unwrap if active licenses or disputes exist.
+     * @param tokenId The IPAsset token ID to unwrap
+     */
+    function unwrapNFT(uint256 tokenId) external;
+
+    /**
+     * @notice Checks if an IPAsset is wrapping an external NFT
+     * @param tokenId The IPAsset token ID
+     * @return True if the IPAsset wraps an NFT, false if it's a native IPAsset
+     */
+    function isWrapped(uint256 tokenId) external view returns (bool);
+
+    /**
+     * @notice Gets the wrapped NFT details for an IPAsset
+     * @param tokenId The IPAsset token ID
+     * @return nftContract The wrapped NFT contract address (zero address if not wrapped)
+     * @return nftTokenId The wrapped NFT token ID (zero if not wrapped)
+     */
+    function getWrappedNFT(uint256 tokenId)
+        external
+        view
+        returns (address nftContract, uint256 nftTokenId);
 }

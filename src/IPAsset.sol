@@ -8,13 +8,16 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 contract IPAsset is
     Initializable,
     ERC721Upgradeable,
     AccessControlUpgradeable,
     PausableUpgradeable,
+    ReentrancyGuardUpgradeable,
     UUPSUpgradeable,
     IIPAsset
 {
@@ -30,6 +33,8 @@ contract IPAsset is
     mapping(uint256 => uint256) public activeLicenseCount;
     mapping(uint256 => bool) private _hasActiveDispute;
     mapping(uint256 => string) private _privateMetadata;
+    mapping(uint256 => IIPAsset.WrappedNFT) private _wrappedNFTs;
+    mapping(address => mapping(uint256 => uint256)) private _nftToIPAsset;
 
     constructor() {
         _disableInitializers();
@@ -45,6 +50,7 @@ contract IPAsset is
         __ERC721_init(name, symbol);
         __AccessControl_init();
         __Pausable_init();
+        __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
 
@@ -62,6 +68,73 @@ contract IPAsset is
         _metadataURIs[tokenId] = metadataURI;
         emit IPMinted(tokenId, to, metadataURI);
         return tokenId;
+    }
+
+    function wrapNFT(
+        address nftContract,
+        uint256 nftTokenId,
+        string memory metadataURI
+    ) external whenNotPaused nonReentrant returns (uint256 ipTokenId) {
+        if (nftContract == address(0)) revert InvalidAddress();
+        if (bytes(metadataURI).length == 0) revert EmptyMetadata();
+
+        address nftOwner = IERC721(nftContract).ownerOf(nftTokenId);
+        if (nftOwner != msg.sender) revert NFTNotOwned(nftContract, nftTokenId, msg.sender);
+
+        uint256 existingIPAsset = _nftToIPAsset[nftContract][nftTokenId];
+        if (existingIPAsset != 0) revert NFTAlreadyWrapped(existingIPAsset);
+
+        ipTokenId = _tokenIdCounter++;
+        _mint(msg.sender, ipTokenId);
+        _metadataURIs[ipTokenId] = metadataURI;
+
+        _wrappedNFTs[ipTokenId] = IIPAsset.WrappedNFT({
+            nftContract: nftContract,
+            nftTokenId: nftTokenId
+        });
+
+        _nftToIPAsset[nftContract][nftTokenId] = ipTokenId;
+
+        emit IPMinted(ipTokenId, msg.sender, metadataURI);
+        emit NFTWrapped(ipTokenId, nftContract, nftTokenId, msg.sender);
+
+        IERC721(nftContract).safeTransferFrom(msg.sender, address(this), nftTokenId);
+
+        return ipTokenId;
+    }
+
+    function unwrapNFT(uint256 tokenId) external whenNotPaused nonReentrant {
+        // CHECKS
+        if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+
+        IIPAsset.WrappedNFT storage wrapped = _wrappedNFTs[tokenId];
+        if (wrapped.nftContract == address(0)) revert NotWrappedNFT();
+
+        if (activeLicenseCount[tokenId] > 0) {
+            revert HasActiveLicenses(tokenId, activeLicenseCount[tokenId]);
+        }
+
+        if (_hasActiveDispute[tokenId]) {
+            revert HasActiveDispute(tokenId);
+        }
+
+        // Store NFT details in memory for later transfer
+        address nftContract = wrapped.nftContract;
+        uint256 nftTokenId = wrapped.nftTokenId;
+
+        // EFFECTS
+        _burn(tokenId);
+
+        delete _wrappedNFTs[tokenId];
+        delete _nftToIPAsset[nftContract][nftTokenId];
+        delete _metadataURIs[tokenId];
+        delete activeLicenseCount[tokenId];
+        delete _hasActiveDispute[tokenId];
+
+        emit NFTUnwrapped(tokenId, nftContract, nftTokenId, msg.sender);
+
+        // INTERACTIONS
+        IERC721(nftContract).transferFrom(address(this), msg.sender, nftTokenId);
     }
 
     function mintLicense(
@@ -208,6 +281,28 @@ contract IPAsset is
 
     function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
+    }
+
+    function isWrapped(uint256 tokenId) external view returns (bool) {
+        return _wrappedNFTs[tokenId].nftContract != address(0);
+    }
+
+    function getWrappedNFT(uint256 tokenId)
+        external
+        view
+        returns (address nftContract, uint256 nftTokenId)
+    {
+        IIPAsset.WrappedNFT storage wrapped = _wrappedNFTs[tokenId];
+        return (wrapped.nftContract, wrapped.nftTokenId);
+    }
+
+    function onERC721Received(
+        address,
+        address,
+        uint256,
+        bytes memory
+    ) external pure returns (bytes4) {
+        return this.onERC721Received.selector;
     }
 
     function supportsInterface(bytes4 interfaceId)
